@@ -1,6 +1,6 @@
 """
 Fixed coordinate tooltip for the map HUD, integrated with the Vue application.
-Usage: py -3 coord_tooltip.py or start.bat
+Usage: py -3 -m server.coord_tooltip or start.bat
 """
 from __future__ import annotations
 
@@ -22,26 +22,23 @@ from typing import Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, unquote, urlparse
 
 from PIL import Image, ImageFilter, ImageGrab, ImageOps
-from game_marker_automation import GameMarkerController
+from .game_marker_automation import GameMarkerController
 
 PORT = 8765
 VERSION = "tooltip-v20-game-marker"
-ROOT = Path(__file__).resolve().parent
-DIST_ROOT = ROOT / "dist"
-PROGRESS_PATH = ROOT / "progress.json"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DIST_ROOT = PROJECT_ROOT / "dist"
+PROGRESS_PATH = PROJECT_ROOT / ".local" / "progress.json"
+LEGACY_PROGRESS_PATH = PROJECT_ROOT / "progress.json"
 PROGRESS_LOCK = threading.Lock()
-DATA_NAMES = {
-    "/data.json",
-    "/breed.json",
-    "/map_icons.json",
-}
 
 # MapGenie Palpagos 1.0, pyramid z8-z16
 MAPGENIE_TILE_BASE = "https://tiles.mapgenie.io/games/palworld/1-0/default-v1"
 MAPGENIE_MIN_Z = 8
 MAPGENIE_MAX_Z = 16
-TILE_DISK = ROOT / "assets" / "map-tiles"
-ICON_DISK = ROOT / "assets" / "map-icons"
+TILE_DISK = PROJECT_ROOT / ".cache" / "map-tiles"
+ICON_DISK = PROJECT_ROOT / ".cache" / "map-icons"
+BUNDLED_ICON_DISK = Path(__file__).resolve().parent / "static" / "map-icons"
 ICON_ALLOWED_HOSTS = {"cdn.paldb.cc"}
 TILE_BYTES_CACHE: Dict[Tuple[str, int, int, int], bytes] = {}
 ICON_BYTES_CACHE: Dict[str, bytes] = {}
@@ -163,7 +160,8 @@ def begin_game_marker_after_selection(
 
 def load_progress_file() -> dict:
     with PROGRESS_LOCK:
-        if not PROGRESS_PATH.is_file():
+        source = PROGRESS_PATH if PROGRESS_PATH.is_file() else LEGACY_PROGRESS_PATH
+        if not source.is_file():
             return {
                 "version": 1,
                 "revision": 0,
@@ -173,7 +171,7 @@ def load_progress_file() -> dict:
                 "updatedAt": "",
             }
         try:
-            data = json.loads(PROGRESS_PATH.read_text(encoding="utf-8"))
+            data = json.loads(source.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             data = {}
         if not isinstance(data, dict):
@@ -214,6 +212,7 @@ def save_progress_file(body: dict) -> dict:
         "prefs": prefs_in,
     }
     with PROGRESS_LOCK:
+        PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp = PROGRESS_PATH.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(PROGRESS_PATH)
@@ -430,7 +429,9 @@ class OcrSelector:
             copied = ""
             raw_attempts: List[str] = []
             votes: Dict[str, Tuple[int, float]] = {}
-            focused_images = [] if fast else prepare_focused_coordinate_images(image)
+            focused_images = prepare_focused_coordinate_images(image)
+            if fast:
+                focused_images = focused_images[5:10]
             for focused in focused_images:
                 result, _elapsed = self._ocr_direct_engine(np.asarray(focused))
                 parts = [str(item[1]).strip() for item in (result or []) if len(item) > 1]
@@ -451,13 +452,13 @@ class OcrSelector:
                     copied = candidate
 
             prepared_images = prepare_white_text_images(image)
-            debug_dir = ROOT / "assets" / "ocr-debug"
+            debug_dir = PROJECT_ROOT / ".cache" / "ocr-debug"
             if save_debug:
                 debug_dir.mkdir(parents=True, exist_ok=True)
                 image.save(debug_dir / "last-capture.png")
             if not copied:
                 fallback_images = (
-                    [prepared_images[index] for index in (3, 4)]
+                    [prepared_images[index] for index in (0, 3, 4)]
                     if fast
                     else prepared_images
                 )
@@ -715,10 +716,11 @@ def fetch_map_icon_bytes(url: str) -> bytes:
     if ext not in (".webp", ".png", ".jpg", ".jpeg", ".svg", ".gif"):
         ext = ".webp"
     path = ICON_DISK / f"{digest}{ext}"
-    if path.is_file() and path.stat().st_size > 0:
-        data = path.read_bytes()
-        ICON_BYTES_CACHE[key] = data
-        return data
+    for candidate in (BUNDLED_ICON_DISK / path.name, path):
+        if candidate.is_file() and candidate.stat().st_size > 0:
+            data = candidate.read_bytes()
+            ICON_BYTES_CACHE[key] = data
+            return data
     data = _http_get_bytes(url, "https://paldb.cc/en/Palpagos_Islands")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
@@ -770,11 +772,6 @@ class Handler(BaseHTTPRequestHandler):
 
     def _safe_static(self, path: str) -> Optional[Path]:
         rel = unquote(path.split("?", 1)[0])
-        if rel in DATA_NAMES:
-            candidate = (ROOT / rel.lstrip("/")).resolve()
-            if candidate.parent == ROOT and candidate.is_file():
-                return candidate
-            return None
         candidate = (DIST_ROOT / rel.lstrip("/")).resolve()
         if (
             str(candidate).startswith(str(DIST_ROOT))

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import rawBreedData from '../breed.json'
+import rawBreedData from '../public/breed.json'
 import { createBreedingEngine } from '@/domain/breeding'
 import type { BreedData, Pal } from '@/types/data'
 import { breedDataSchema } from '@/types/data'
@@ -32,8 +32,8 @@ describe('breeding', () => {
     expect(engine.results('a', 'b')).toEqual(['c'])
   })
 
-  it('respects IgnoreCombi restrictions', () => {
-    expect(engine.results('slime', 'a')).toEqual([])
+  it('excludes IgnoreCombi Pals only from ordinary offspring', () => {
+    expect(engine.results('slime', 'a')).toEqual(['a'])
     expect(engine.results('slime', 'slime')).toEqual(['slime'])
   })
 
@@ -59,6 +59,26 @@ describe('PalDB breeding data', () => {
     expect(engine.results('CatMage', 'FoxMage')).toEqual(
       expect.arrayContaining(['FoxMage_Dark', 'CatMage_Fire']),
     )
+    expect(engine.results('KingSunfish', 'KendoFrog_Dark')).toEqual(['BirdDragon'])
+  })
+
+  it('keeps exclusive offspring out of ordinary rank calculations', () => {
+    const uniqueChildren = new Set(paldbData.unique.map((combination) => combination.child))
+    for (let first = 0; first < paldbData.pals.length; first += 1) {
+      for (let second = first + 1; second < paldbData.pals.length; second += 1) {
+        const parentA = paldbData.pals[first]!
+        const parentB = paldbData.pals[second]!
+        const isUniquePair = paldbData.unique.some(
+          (combination) =>
+            (combination.a === parentA.code && combination.b === parentB.code) ||
+            (combination.a === parentB.code && combination.b === parentA.code),
+        )
+        if (isUniquePair) continue
+        expect(
+          engine.results(parentA.code, parentB.code).every((code) => !uniqueChildren.has(code)),
+        ).toBe(true)
+      }
+    }
   })
 
   it('keeps every pair symmetric and every result valid', () => {

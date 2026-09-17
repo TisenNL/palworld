@@ -21,8 +21,8 @@ IMAGE_PROXY = "http://127.0.0.1:8765/map-icon?src="
 
 
 def image_urls() -> list[tuple[str, str]]:
-    breed = json.loads((ROOT / "breed.json").read_text(encoding="utf-8"))
-    icons = json.loads((ROOT / "map_icons.json").read_text(encoding="utf-8"))
+    breed = json.loads((ROOT / "public" / "breed.json").read_text(encoding="utf-8"))
+    icons = json.loads((ROOT / "public" / "map_icons.json").read_text(encoding="utf-8"))
     values = [
         *((f"Pal: {pal['name']}", str(pal.get("icon") or "")) for pal in breed["pals"]),
         *((f"Map icon: {name}", str(url or "")) for name, url in icons["icons"].items()),

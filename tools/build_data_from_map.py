@@ -1,4 +1,4 @@
-"""Rebuild data.json from map_data_en.js (paldb) + OP.GG map-points (chests/junk)."""
+"""Rebuild public/data.json from the PalDB and OP.GG source data."""
 from __future__ import annotations
 
 import json
@@ -8,9 +8,10 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MAP_JS = ROOT / "map_data_en.js"
-OUT = ROOT / "data.json"
-OPGG_CACHE_DIR = ROOT / "tools"
+SOURCE_DIR = ROOT / "tools" / "data"
+MAP_JS = SOURCE_DIR / "map_data_en.js"
+OUT = ROOT / "public" / "data.json"
+OPGG_CACHE_DIR = SOURCE_DIR
 OPGG_GROUPS = (
     "resources",
     "eggs",

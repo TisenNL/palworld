@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0register-protocol.ps1"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0_kill_tooltip.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\register-protocol.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\kill-helper.ps1"
 echo.
 echo ========================================
 echo  Palworld Checklist + HUD tooltip
@@ -9,7 +9,7 @@ echo ========================================
 echo.
 echo Starting server on http://127.0.0.1:8765/
 echo Keep this window open.
-echo Use matar-tooltip.bat to stop the server.
+echo Use scripts\stop-server.bat to stop the server.
 echo.
 where node >nul 2>&1
 if errorlevel 1 (
@@ -44,5 +44,5 @@ if errorlevel 1 (
   )
 )
 start /b py -3 -c "import time,urllib.request; time.sleep(1.2); urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=5); import webbrowser; webbrowser.open('http://127.0.0.1:8765/')"
-py -3 coord_tooltip.py
+py -3 -m server.coord_tooltip
 pause

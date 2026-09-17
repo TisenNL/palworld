@@ -15,11 +15,13 @@ const pairKey = (a: string, b: string): string => (a < b ? `${a}|${b}` : `${b}|$
 export function createBreedingEngine(data: BreedData) {
   const byCode = new Map(data.pals.map((pal) => [pal.code, pal]))
   const unique = new Map<string, string[]>()
+  const uniqueChildren = new Set<string>()
   for (const combination of data.unique) {
     const key = pairKey(combination.a, combination.b)
     const values = unique.get(key) ?? []
     if (!values.includes(combination.child)) values.push(combination.child)
     unique.set(key, values)
+    uniqueChildren.add(combination.child)
   }
 
   function results(codeA: string, codeB: string): string[] {
@@ -29,12 +31,11 @@ export function createBreedingEngine(data: BreedData) {
     if (codeA === codeB) return [codeA]
     const special = unique.get(pairKey(codeA, codeB))
     if (special?.length) return [...special]
-    if (a.ignoreCombi || b.ignoreCombi) return []
     const power = Math.floor((a.rank + b.rank + 1) / 2)
     let best: Pal | undefined
     let distance = Number.POSITIVE_INFINITY
     for (const candidate of data.pals) {
-      if (candidate.ignoreCombi) continue
+      if (candidate.ignoreCombi || uniqueChildren.has(candidate.code)) continue
       const nextDistance = Math.abs(candidate.rank - power)
       if (
         nextDistance < distance ||

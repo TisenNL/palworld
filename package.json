@@ -15,10 +15,11 @@
     "lint": "eslint .",
     "format": "prettier --write src tests *.config.ts package.json tsconfig*.json",
     "test": "vitest run",
+    "test:server": "py -3 -m unittest tests.test_game_marker_automation",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "validate:images": "py -3 tools/validate_image_urls.py",
-    "validate": "run-s typecheck lint test build:only"
+    "validate": "run-s typecheck lint test test:server build:only"
   },
   "dependencies": {
     "@primeuix/themes": "^1.2.3",

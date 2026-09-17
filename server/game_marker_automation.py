@@ -233,7 +233,7 @@ class GameMarkerController:
                 previous = value
                 if consecutive >= 2:
                     return value
-            self.sleep(0.04)
+            self.sleep(0.08)
         raise RuntimeError("OCR coordinates are missing or unstable")
 
     def _read_near(
@@ -262,11 +262,11 @@ class GameMarkerController:
         latest = current
         for dx, dy in ((24, 0), (0, 24)):
             self.game_input.move_cursor(anchor[0] + dx, anchor[1] + dy)
-            self.sleep(0.1)
+            self.sleep(0.16)
             moved = self._read_near(box, origin, started, latest)
             vectors.append(((moved[0] - latest[0]) / 24.0, (moved[1] - latest[1]) / 24.0))
             self.game_input.move_cursor(*anchor)
-            self.sleep(0.1)
+            self.sleep(0.16)
             latest = self._read_near(box, origin, started, moved)
         return vectors[0], vectors[1], latest
 
@@ -281,7 +281,7 @@ class GameMarkerController:
         latest = current
         for key in ("W", "S", "D", "A"):
             self.game_input.tap_key(key, 0.06)
-            self.sleep(0.14)
+            self.sleep(0.24)
             moved = self._read_near(box, origin, started, latest)
             vectors[key] = (moved[0] - latest[0], moved[1] - latest[1])
             latest = moved
@@ -310,7 +310,7 @@ class GameMarkerController:
             (error[0] * vector[0] + error[1] * vector[1])
             / max(0.001, vector[0] ** 2 + vector[1] ** 2),
         )
-        return key, min(0.28, max(0.012, 0.06 * projection * 0.8))
+        return key, min(0.16, max(0.012, 0.06 * projection * 0.65))
 
     def _run(
         self,
@@ -327,7 +327,7 @@ class GameMarkerController:
             if not self.game_input.focus_game():
                 raise RuntimeError("Palworld window was not found or could not receive focus")
             self.game_input.move_cursor(*selection_point)
-            self.sleep(0.15)
+            self.sleep(0.3)
             current = self._read(selection_box, selection_point, started)
             self.update_state(
                 status="calibrating",
@@ -355,6 +355,7 @@ class GameMarkerController:
                     message="Calibration completed without movement or confirmation",
                 )
                 return
+            stable = 0
             regressions = 0
             mouse_vectors: Optional[
                 tuple[tuple[float, float], tuple[float, float]]
@@ -369,7 +370,15 @@ class GameMarkerController:
                     message=f"Moving to {target[0]}, {target[1]}",
                 )
                 if current == target:
-                    break
+                    stable += 1
+                    if stable >= 2:
+                        break
+                    self.sleep(0.15)
+                    current = self._read_near(
+                        selection_box, selection_point, started, current, maximum_delta=2
+                    )
+                    continue
+                stable = 0
                 previous = current
                 error = (float(target[0] - current[0]), float(target[1] - current[1]))
                 action_key: Optional[str] = None
@@ -403,12 +412,12 @@ class GameMarkerController:
                         if step_x or step_y:
                             cursor = self.game_input.cursor()
                             self.game_input.move_cursor(cursor[0] + step_x, cursor[1] + step_y)
-                            self.sleep(0.1)
+                            self.sleep(0.16)
                             mouse_moved = True
                 if not mouse_moved:
                     action_key, action_duration = self._best_key(error, key_vectors)
                     self.game_input.tap_key(action_key, action_duration)
-                    self.sleep(0.1)
+                    self.sleep(0.18)
                 current = self._read_near(selection_box, selection_point, started, previous)
                 observed = (current[0] - previous[0], current[1] - previous[1])
                 if action_key is not None and observed != (0, 0):
@@ -435,7 +444,7 @@ class GameMarkerController:
                     message="Opening the marker dialog",
                 )
                 self.game_input.tap_key("E", 0.12)
-                self.sleep(0.5)
+                self.sleep(0.65)
                 self._check_safety(started)
                 self.update_state(message="Clicking Add")
                 self.game_input.move_cursor(*add_button)

@@ -6,7 +6,8 @@ playwright-report/
 __pycache__/
 *.py[cod]
 .vite/
-assets/map-tiles/
-assets/ocr-debug/
+.cache/
+.local/
+assets/
 progress.json
 progress.json.tmp

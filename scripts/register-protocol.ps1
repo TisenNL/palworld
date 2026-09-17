@@ -1,6 +1,7 @@
 # Registers palchecklist:// so the browser Start button can launch start.bat
 $ErrorActionPreference = "SilentlyContinue"
-$root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scripts = Split-Path -Parent $MyInvocation.MyCommand.Path
+$root = Split-Path -Parent $scripts
 $bat = Join-Path $root "start.bat"
 $cmd = '"' + $bat + '" "%1"'
 

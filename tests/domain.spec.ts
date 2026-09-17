@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import rawGameData from '../data.json'
-import rawMapIcons from '../map_icons.json'
+import rawGameData from '../public/data.json'
+import rawMapIcons from '../public/map_icons.json'
 import { cakeRecipes, calculateCakes, emptyStock, priceDefaults } from '@/domain/cakes'
 import { gameToImage, imageToGame, parseCoordinates } from '@/domain/coordinates'
 import { buildLayers } from '@/domain/layers'

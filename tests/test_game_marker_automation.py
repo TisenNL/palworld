@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from game_marker_automation import GameMarkerController, solve_mouse_delta
+from server.game_marker_automation import GameMarkerController, solve_mouse_delta
 
 
 class FakeGameInput:

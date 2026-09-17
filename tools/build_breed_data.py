@@ -1,4 +1,4 @@
-"""Build breed.json from iv_en.json + breed_data_extracted.json (paldb)."""
+"""Build public/breed.json from the PalDB source data."""
 from __future__ import annotations
 
 import json
@@ -7,9 +7,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 IV_URL = "https://paldb.cc/json/iv_en.json"
-IV_CACHE = ROOT / "tools" / "iv_en.json"
-EXTRACTED = ROOT / "tools" / "breed_data_extracted.json"
-OUT = ROOT / "breed.json"
+DATA_DIR = ROOT / "tools" / "data"
+IV_CACHE = DATA_DIR / "iv_en.json"
+EXTRACTED = DATA_DIR / "breed_data_extracted.json"
+OUT = ROOT / "public" / "breed.json"
 
 SKIP_CODES = {"KingWhale", "WorldTreeDragon"}
 
