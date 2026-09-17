@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+__pycache__/
+*.py[cod]
+.vite/
+assets/map-tiles/
+assets/ocr-debug/
+progress.json
+progress.json.tmp

@@ -1,0 +1,532 @@
+<script setup lang="ts">
+import { api } from '@/services/api'
+import { gameToImage, imageToGame, mapProjection } from '@/domain/coordinates'
+import { LruCache } from '@/domain/lruCache'
+import type { MapMarker } from '@/types/data'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+
+const props = defineProps<{
+  markers: MapMarker[]
+  camera: { x: number; y: number; scale: number }
+}>()
+
+const emit = defineEmits<{
+  select: [marker: MapMarker | null, position: { x: number; y: number }]
+  context: [marker: MapMarker, position: { x: number; y: number }]
+  hover: [text: string]
+  cameraChange: [camera: { x: number; y: number; scale: number }]
+}>()
+
+const canvas = ref<HTMLCanvasElement | null>(null)
+const hasVisibleTile = ref(false)
+const mapLoadFailed = ref(false)
+const tileCache = new LruCache<string, ImageBitmap>(320)
+const iconCache = new LruCache<string, CanvasImageSource>(180)
+const tileLoading = new Set<string>()
+const iconLoading = new Set<string>()
+const failedTiles = new Map<string, { attempts: number; retryAt: number }>()
+const failedIcons = new Map<string, { attempts: number; retryAt: number }>()
+const tileQueue: Array<{ key: string; url: string }> = []
+const iconQueue: Array<{ key: string; url: string; enhance: boolean }> = []
+const controllers = new Set<AbortController>()
+const retryTimers = new Set<number>()
+let activeTiles = 0
+let activeIcons = 0
+let frame = 0
+let observer: ResizeObserver | null = null
+let dragging = false
+let moved = false
+let lastX = 0
+let lastY = 0
+let hoverMarker: MapMarker | null = null
+
+const clampScale = (value: number): number => Math.max(0.004, Math.min(1, value))
+
+function updateCamera(next: { x: number; y: number; scale: number }): void {
+  emit('cameraChange', next)
+}
+
+function scheduleDraw(): void {
+  if (frame) return
+  frame = requestAnimationFrame(() => {
+    frame = 0
+    draw()
+  })
+}
+
+function resize(): void {
+  const element = canvas.value
+  if (!element) return
+  const rect = element.getBoundingClientRect()
+  const dpr = Math.min(2.5, window.devicePixelRatio || 1)
+  const width = Math.max(1, Math.round(rect.width * dpr))
+  const height = Math.max(1, Math.round(rect.height * dpr))
+  if (element.width !== width || element.height !== height) {
+    element.width = width
+    element.height = height
+  }
+  scheduleDraw()
+}
+
+function viewport(): { width: number; height: number; dpr: number } {
+  const element = canvas.value
+  const dpr = Math.min(2.5, window.devicePixelRatio || 1)
+  return {
+    width: element?.clientWidth ?? 1,
+    height: element?.clientHeight ?? 1,
+    dpr,
+  }
+}
+
+function requestTile(z: number, x: number, y: number): void {
+  const key = `${z}/${x}/${y}`
+  const failure = failedTiles.get(key)
+  if (
+    tileCache.has(key) ||
+    tileLoading.has(key) ||
+    (failure && (failure.attempts >= 3 || failure.retryAt > Date.now()))
+  )
+    return
+  tileLoading.add(key)
+  tileQueue.push({ key, url: api.mapTileUrl(z, x, y) })
+  pumpTiles()
+}
+
+function pumpTiles(): void {
+  while (activeTiles < 4 && tileQueue.length) {
+    const item = tileQueue.shift()!
+    activeTiles++
+    const controller = new AbortController()
+    controllers.add(controller)
+    void fetch(item.url, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Tile ${response.status}`)
+        return response.blob()
+      })
+      .then(createImageBitmap)
+      .then((image) => {
+        tileCache.set(item.key, image)
+        failedTiles.delete(item.key)
+        hasVisibleTile.value = true
+        mapLoadFailed.value = false
+      })
+      .catch(() => {
+        const attempts = (failedTiles.get(item.key)?.attempts ?? 0) + 1
+        failedTiles.set(item.key, { attempts, retryAt: Date.now() + attempts * 1200 })
+        if (attempts < 3) {
+          const timer = window.setTimeout(
+            () => {
+              retryTimers.delete(timer)
+              scheduleDraw()
+            },
+            attempts * 1200 + 50,
+          )
+          retryTimers.add(timer)
+        } else if (!hasVisibleTile.value) mapLoadFailed.value = true
+      })
+      .finally(() => {
+        controllers.delete(controller)
+        tileLoading.delete(item.key)
+        activeTiles--
+        scheduleDraw()
+        pumpTiles()
+      })
+  }
+}
+
+function requestIcon(source: string, enhance: boolean): void {
+  const failure = failedIcons.get(source)
+  if (
+    iconCache.has(source) ||
+    iconLoading.has(source) ||
+    (failure && (failure.attempts >= 3 || failure.retryAt > Date.now()))
+  )
+    return
+  iconLoading.add(source)
+  iconQueue.push({ key: source, url: api.mapIconUrl(source), enhance })
+  pumpIcons()
+}
+
+function enhancedIcon(image: ImageBitmap): HTMLCanvasElement {
+  const size = 96
+  const output = document.createElement('canvas')
+  output.width = size
+  output.height = size
+  const context = output.getContext('2d')!
+  context.imageSmoothingEnabled = true
+  context.imageSmoothingQuality = 'high'
+  context.save()
+  context.filter = 'brightness(0) saturate(100%) drop-shadow(0 1px 1px rgba(0,0,0,.9))'
+  context.globalAlpha = 0.72
+  context.drawImage(image, 3, 3, size - 6, size - 6)
+  context.restore()
+  context.filter = 'saturate(1.3) contrast(1.18) brightness(1.04)'
+  context.drawImage(image, 3, 3, size - 6, size - 6)
+  return output
+}
+
+function pumpIcons(): void {
+  while (activeIcons < 6 && iconQueue.length) {
+    const item = iconQueue.shift()!
+    activeIcons++
+    const controller = new AbortController()
+    controllers.add(controller)
+    void fetch(item.url, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Icon request failed with status ${response.status}`)
+        return response.blob()
+      })
+      .then(createImageBitmap)
+      .then((image) => {
+        iconCache.set(item.key, item.enhance ? enhancedIcon(image) : image)
+        failedIcons.delete(item.key)
+      })
+      .catch(() => {
+        const attempts = (failedIcons.get(item.key)?.attempts ?? 0) + 1
+        failedIcons.set(item.key, { attempts, retryAt: Date.now() + attempts * 1200 })
+        if (attempts < 3) {
+          const timer = window.setTimeout(
+            () => {
+              retryTimers.delete(timer)
+              scheduleDraw()
+            },
+            attempts * 1200 + 50,
+          )
+          retryTimers.add(timer)
+        }
+      })
+      .finally(() => {
+        controllers.delete(controller)
+        iconLoading.delete(item.key)
+        activeIcons--
+        scheduleDraw()
+        pumpIcons()
+      })
+  }
+}
+
+function drawTiles(context: CanvasRenderingContext2D, width: number, height: number): void {
+  const ideal = mapProjection.worldZoom + Math.log2(props.camera.scale)
+  const zoom = Math.max(
+    mapProjection.minTileZoom,
+    Math.min(mapProjection.maxTileZoom, Math.round(ideal)),
+  )
+  const worldPerTile = mapProjection.tileSize * 2 ** (mapProjection.worldZoom - zoom)
+  const minX = Math.max(0, Math.floor(-props.camera.x / props.camera.scale / worldPerTile) - 1)
+  const minY = Math.max(0, Math.floor(-props.camera.y / props.camera.scale / worldPerTile) - 1)
+  const maxIndex = 2 ** zoom - 1
+  const maxX = Math.min(
+    maxIndex,
+    Math.ceil((width - props.camera.x) / props.camera.scale / worldPerTile) + 1,
+  )
+  const maxY = Math.min(
+    maxIndex,
+    Math.ceil((height - props.camera.y) / props.camera.scale / worldPerTile) + 1,
+  )
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      const key = `${zoom}/${x}/${y}`
+      const image = tileCache.get(key)
+      const dx = props.camera.x + x * worldPerTile * props.camera.scale
+      const dy = props.camera.y + y * worldPerTile * props.camera.scale
+      const size = worldPerTile * props.camera.scale + 0.5
+      if (image) context.drawImage(image, dx, dy, size, size)
+      else {
+        context.fillStyle = '#15202b'
+        context.fillRect(dx, dy, size, size)
+        requestTile(zoom, x, y)
+      }
+    }
+  }
+}
+
+function markerPosition(marker: MapMarker): { x: number; y: number } {
+  const image = gameToImage(marker.item.x, marker.item.y)
+  return {
+    x: props.camera.x + image.x * props.camera.scale,
+    y: props.camera.y + image.y * props.camera.scale,
+  }
+}
+
+function drawMarkers(context: CanvasRenderingContext2D, width: number, height: number): void {
+  const markerSize = Math.max(18, Math.min(34, 22 + props.camera.scale * 16))
+  for (const marker of props.markers) {
+    const point = markerPosition(marker)
+    if (
+      point.x < -markerSize ||
+      point.y < -markerSize ||
+      point.x > width + markerSize ||
+      point.y > height + markerSize
+    )
+      continue
+    context.save()
+    if (marker.done) context.globalAlpha = 0.5
+    const icon = marker.iconUrl ? iconCache.get(marker.iconUrl) : undefined
+    if (marker.iconUrl && !icon) {
+      requestIcon(marker.iconUrl, marker.storage !== 'alphas')
+    }
+    if (icon) {
+      context.imageSmoothingEnabled = true
+      context.imageSmoothingQuality = 'high'
+      context.drawImage(
+        icon,
+        point.x - markerSize / 2,
+        point.y - markerSize / 2,
+        markerSize,
+        markerSize,
+      )
+    } else {
+      context.beginPath()
+      context.fillStyle = marker.color
+      context.arc(point.x, point.y, markerSize * 0.32, 0, Math.PI * 2)
+      context.fill()
+    }
+    if (hoverMarker?.id === marker.id) {
+      context.beginPath()
+      context.strokeStyle = '#fff'
+      context.lineWidth = 2
+      context.arc(point.x, point.y, markerSize * 0.62, 0, Math.PI * 2)
+      context.stroke()
+    }
+    context.restore()
+  }
+}
+
+function draw(): void {
+  const element = canvas.value
+  const context = element?.getContext('2d')
+  if (!element || !context) return
+  const { width, height, dpr } = viewport()
+  context.setTransform(dpr, 0, 0, dpr, 0, 0)
+  context.clearRect(0, 0, width, height)
+  drawTiles(context, width, height)
+  drawMarkers(context, width, height)
+}
+
+function findMarker(x: number, y: number): MapMarker | null {
+  let nearest: MapMarker | null = null
+  let distance = 20
+  for (let index = props.markers.length - 1; index >= 0; index--) {
+    const marker = props.markers[index]!
+    const point = markerPosition(marker)
+    const next = Math.hypot(point.x - x, point.y - y)
+    if (next < distance) {
+      nearest = marker
+      distance = next
+    }
+  }
+  return nearest
+}
+
+function localPoint(event: PointerEvent | MouseEvent): { x: number; y: number } {
+  const rect = canvas.value!.getBoundingClientRect()
+  return { x: event.clientX - rect.left, y: event.clientY - rect.top }
+}
+
+function pointerDown(event: PointerEvent): void {
+  if (event.button !== 0) return
+  dragging = true
+  moved = false
+  lastX = event.clientX
+  lastY = event.clientY
+  canvas.value?.setPointerCapture(event.pointerId)
+}
+
+function pointerMove(event: PointerEvent): void {
+  if (dragging) {
+    const dx = event.clientX - lastX
+    const dy = event.clientY - lastY
+    if (Math.abs(dx) + Math.abs(dy) > 1) moved = true
+    updateCamera({
+      x: props.camera.x + dx,
+      y: props.camera.y + dy,
+      scale: props.camera.scale,
+    })
+    lastX = event.clientX
+    lastY = event.clientY
+    scheduleDraw()
+    return
+  }
+  const point = localPoint(event)
+  const marker = findMarker(point.x, point.y)
+  if (marker?.id !== hoverMarker?.id) {
+    hoverMarker = marker
+    emit('hover', marker?.label ?? '')
+    scheduleDraw()
+  }
+}
+
+function pointerUp(event: PointerEvent): void {
+  if (!dragging) return
+  dragging = false
+  canvas.value?.releasePointerCapture(event.pointerId)
+  if (!moved) {
+    const point = localPoint(event)
+    emit('select', findMarker(point.x, point.y), point)
+  }
+}
+
+function wheel(event: WheelEvent): void {
+  event.preventDefault()
+  const point = localPoint(event)
+  const imageX = (point.x - props.camera.x) / props.camera.scale
+  const imageY = (point.y - props.camera.y) / props.camera.scale
+  const scale = clampScale(props.camera.scale * Math.exp(-event.deltaY * 0.0014))
+  updateCamera({
+    x: point.x - imageX * scale,
+    y: point.y - imageY * scale,
+    scale,
+  })
+  scheduleDraw()
+}
+
+function contextMenu(event: MouseEvent): void {
+  event.preventDefault()
+  const point = localPoint(event)
+  const marker = findMarker(point.x, point.y)
+  if (marker) emit('context', marker, point)
+}
+
+function cameraIntersectsMarkerBounds(): boolean {
+  if (!props.markers.length) return false
+  const { width, height } = viewport()
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  for (const marker of props.markers) {
+    const point = markerPosition(marker)
+    minX = Math.min(minX, point.x)
+    maxX = Math.max(maxX, point.x)
+    minY = Math.min(minY, point.y)
+    maxY = Math.max(maxY, point.y)
+  }
+  return maxX >= 0 && minX <= width && maxY >= 0 && minY <= height
+}
+
+function fitMarkers(): void {
+  if (!props.markers.length) return
+  const { width, height } = viewport()
+  const points = props.markers.map((marker) => gameToImage(marker.item.x, marker.item.y))
+  const minX = Math.min(...points.map((point) => point.x))
+  const maxX = Math.max(...points.map((point) => point.x))
+  const minY = Math.min(...points.map((point) => point.y))
+  const maxY = Math.max(...points.map((point) => point.y))
+  const scale = clampScale(Math.min((width - 80) / (maxX - minX), (height - 80) / (maxY - minY)))
+  updateCamera({
+    x: width / 2 - ((minX + maxX) / 2) * scale,
+    y: height / 2 - ((minY + maxY) / 2) * scale,
+    scale,
+  })
+  scheduleDraw()
+}
+
+function centerGame(x: number, y: number): void {
+  const { width, height } = viewport()
+  const point = gameToImage(x, y)
+  updateCamera({
+    x: width / 2 - point.x * props.camera.scale,
+    y: height / 2 - point.y * props.camera.scale,
+    scale: props.camera.scale,
+  })
+  scheduleDraw()
+}
+
+function coordinatesAt(x: number, y: number): { x: number; y: number } {
+  return imageToGame(
+    (x - props.camera.x) / props.camera.scale,
+    (y - props.camera.y) / props.camera.scale,
+  )
+}
+
+defineExpose({ fitMarkers, centerGame, coordinatesAt, redraw: scheduleDraw })
+
+watch(() => [props.camera.x, props.camera.y, props.camera.scale, props.markers], scheduleDraw, {
+  deep: false,
+})
+
+onMounted(() => {
+  observer = new ResizeObserver(resize)
+  observer.observe(canvas.value!)
+  void nextTick(() => {
+    resize()
+    if (!cameraIntersectsMarkerBounds()) fitMarkers()
+  })
+})
+
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  cancelAnimationFrame(frame)
+  controllers.forEach((controller) => controller.abort())
+  controllers.clear()
+  retryTimers.forEach((timer) => window.clearTimeout(timer))
+  retryTimers.clear()
+  tileCache.clear()
+  iconCache.clear()
+  failedTiles.clear()
+  failedIcons.clear()
+})
+</script>
+
+<template>
+  <div class="map-canvas-container">
+    <canvas
+      ref="canvas"
+      class="map-canvas"
+      aria-label="Interactive Palworld map"
+      @pointerdown="pointerDown"
+      @pointermove="pointerMove"
+      @pointerup="pointerUp"
+      @pointercancel="pointerUp"
+      @pointerleave="hoverMarker = null"
+      @wheel="wheel"
+      @contextmenu="contextMenu"
+    />
+    <div v-if="!hasVisibleTile" class="map-loading" role="status">
+      <i :class="mapLoadFailed ? 'pi pi-exclamation-triangle' : 'pi pi-spin pi-spinner'" />
+      <span>{{
+        mapLoadFailed ? 'Map tiles are temporarily unavailable' : 'Loading map tiles…'
+      }}</span>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.map-canvas-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.map-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+  background: #101824;
+}
+
+.map-loading {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  border-radius: 999px;
+  color: #dbeafe;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: rgba(5, 9, 20, 0.88);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.map-canvas:active {
+  cursor: grabbing;
+}
+</style>
