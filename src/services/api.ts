@@ -12,9 +12,11 @@ import { progressSchema, type ProgressPayload } from '@/types/progress'
 import {
   gameMarkerStateSchema,
   healthSchema,
+  mouseLoopStateSchema,
   ocrStateSchema,
   type GameMarkerState,
   type HealthState,
+  type MouseLoopState,
   type OcrState,
 } from '@/types/server'
 
@@ -94,6 +96,18 @@ export const api = {
   cancelGameMarker: async (): Promise<void> => {
     await request('/game-marker/cancel', { method: 'POST' })
   },
+  startMouseLoop: async (intervalSeconds: number): Promise<void> => {
+    await request('/mouse-loop/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intervalSeconds }),
+    })
+  },
+  stopMouseLoop: async (): Promise<void> => {
+    await request('/mouse-loop/stop', { method: 'POST' })
+  },
+  getMouseLoopState: (): Promise<MouseLoopState> =>
+    json('/mouse-loop/state', mouseLoopStateSchema, { cache: 'no-store' }),
   mapTileUrl: (z: number, x: number, y: number): string =>
     `${apiBase}/map-tile?z=${z}&x=${x}&y=${y}`,
   mapIconUrl: (source: string): string => `${apiBase}/map-icon?src=${encodeURIComponent(source)}`,

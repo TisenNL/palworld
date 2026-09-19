@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
+import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
 import Slider from 'primevue/slider'
 import { useToast } from 'primevue/usetoast'
@@ -33,6 +34,7 @@ const toast = useToast()
 const canvas = ref<MapCanvasExposed | null>(null)
 const browseGroup = ref(preferences.values.mapBrowseGroup)
 const popup = ref({ visible: false, x: 0, y: 0 })
+const mouseLoopSeconds = ref(40)
 let cameraTimer: number | undefined
 
 const visibleCount = computed(
@@ -201,18 +203,64 @@ async function markInGame(): Promise<void> {
   }
 }
 
+async function toggleMouseLoop(): Promise<void> {
+  if (!server.online) {
+    window.location.href = 'palchecklist://start'
+    toast.add({
+      severity: 'info',
+      summary: 'Starting local helper',
+      detail: 'Wait a few seconds and try again.',
+      life: 4000,
+    })
+    return
+  }
+  try {
+    if (server.mouseLoopBusy) {
+      await server.stopMouseLoop()
+      toast.add({
+        severity: 'info',
+        summary: 'Mouse loop stopped',
+        detail: 'Right/middle click loop was cancelled.',
+        life: 2500,
+      })
+      return
+    }
+    const seconds = Math.max(1, Math.round(Number(mouseLoopSeconds.value) || 40))
+    mouseLoopSeconds.value = seconds
+    await server.startMouseLoop(seconds)
+    toast.add({
+      severity: 'success',
+      summary: 'Mouse loop started',
+      detail: `Every ${seconds}s: focus Palworld, hold RMB, click MMB. Esc stops.`,
+      life: 4500,
+    })
+  } catch {
+    toast.add({
+      severity: 'error',
+      summary: 'Mouse loop unavailable',
+      detail: server.error || 'Could not start the mouse combo loop.',
+      life: 4000,
+    })
+  }
+}
+
 function setAll(visible: boolean): void {
   map.setAllLayers(visible)
 }
 
+function toggleSidebar(): void {
+  preferences.values.sidebarCollapsed = !preferences.values.sidebarCollapsed
+}
+
 map.restoreCamera()
 void server.pollGameMarker()
+void server.pollMouseLoop()
 </script>
 
 <template>
   <div class="workspace map-view">
     <h1 class="sr-only">Interactive map</h1>
-    <aside class="sidebar map-sidebar">
+    <aside class="sidebar map-sidebar" :aria-hidden="preferences.values.sidebarCollapsed">
       <div class="sidebar-scroll">
         <CompactPanel
           title="Categories"
@@ -222,7 +270,7 @@ void server.pollGameMarker()
           <InputText v-model="map.search" fluid placeholder="Search the map…" />
           <div class="quick-actions">
             <Button label="All" size="small" text @click="setAll(true)" />
-            <Button label="None" size="small" text severity="secondary" @click="setAll(false)" />
+            <Button label="Hide" size="small" text severity="secondary" @click="setAll(false)" />
           </div>
           <div class="category-accordions">
             <details
@@ -267,10 +315,6 @@ void server.pollGameMarker()
           @update:open="setPanelOpen('map-display', $event)"
         >
           <div class="display-options">
-            <label class="layer-check">
-              <Checkbox v-model="preferences.values.mapHideDone" binary />
-              <span>Hide completed</span>
-            </label>
             <div class="slider-field">
               <span>Menu width</span>
               <Slider v-model="preferences.values.sidebarWidth" :min="260" :max="620" />
@@ -284,7 +328,7 @@ void server.pollGameMarker()
 
         <CompactPanel
           title="Tools"
-          :open="panelOpen('map-tools', false)"
+          :open="panelOpen('map-tools', true)"
           @update:open="setPanelOpen('map-tools', $event)"
         >
           <div class="tool-actions">
@@ -296,11 +340,6 @@ void server.pollGameMarker()
                 @keydown.enter="centerTyped"
               />
               <Button
-                icon="pi pi-crosshairs"
-                aria-label="Center coordinates"
-                @click="centerTyped"
-              />
-              <Button
                 icon="pi pi-camera"
                 severity="secondary"
                 aria-label="Read coordinates from screen"
@@ -308,6 +347,35 @@ void server.pollGameMarker()
                 @click="runOcr"
               />
             </div>
+            <div class="mouse-loop-row">
+              <InputNumber
+                v-model="mouseLoopSeconds"
+                :min="1"
+                :max="3600"
+                :disabled="server.mouseLoopBusy"
+                suffix=" s"
+                fluid
+                input-class="mouse-loop-input"
+                aria-label="Mouse loop interval seconds"
+              />
+              <Button
+                :label="server.mouseLoopBusy ? 'Stop' : 'Loop'"
+                :icon="server.mouseLoopBusy ? 'pi pi-stop' : 'pi pi-play'"
+                :severity="server.mouseLoopBusy ? 'danger' : 'help'"
+                :outlined="!server.mouseLoopBusy"
+                size="small"
+                :aria-label="server.mouseLoopBusy ? 'Stop mouse loop' : 'Start mouse loop'"
+                :title="
+                  server.mouseLoopBusy
+                    ? server.mouseLoop?.message || 'Stop mouse loop'
+                    : 'Hold RMB + middle click loop'
+                "
+                @click="toggleMouseLoop"
+              />
+            </div>
+            <small v-if="server.mouseLoopBusy" class="mouse-loop-status">
+              {{ server.mouseLoop?.message || 'Mouse loop running' }}
+            </small>
             <Button
               label="Fit to content"
               icon="pi pi-expand"
@@ -337,6 +405,19 @@ void server.pollGameMarker()
       </div>
     </aside>
 
+    <button
+      type="button"
+      class="sidebar-edge-toggle"
+      :aria-label="preferences.values.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+      :title="preferences.values.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+      @click="toggleSidebar"
+    >
+      <i
+        :class="preferences.values.sidebarCollapsed ? 'pi pi-angle-right' : 'pi pi-angle-left'"
+        aria-hidden="true"
+      />
+    </button>
+
     <section class="map-stage" @click.self="popup.visible = false">
       <MapCanvas
         ref="canvas"
@@ -348,7 +429,7 @@ void server.pollGameMarker()
         @hover="map.hoverText = $event"
       />
       <div class="map-status">
-        {{ map.hoverText || `${map.markers.length.toLocaleString('en-US')} visible markers` }}
+        {{ map.hoverText || 'Centered on (—, —)' }}
       </div>
       <div
         v-if="popup.visible && map.selectedMarker"
@@ -440,7 +521,7 @@ void server.pollGameMarker()
 
 .coordinate-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 38px 38px;
+  grid-template-columns: minmax(0, 1fr) 38px;
   gap: 6px;
 }
 
@@ -554,6 +635,28 @@ void server.pollGameMarker()
   gap: 6px;
 }
 
+.mouse-loop-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.mouse-loop-row :deep(.p-inputnumber) {
+  width: 100%;
+}
+
+.tool-actions :deep(.mouse-loop-input) {
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+.mouse-loop-status {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
 .server-status {
   display: flex;
   align-items: center;
@@ -569,16 +672,33 @@ void server.pollGameMarker()
 
 .map-status {
   position: absolute;
-  right: 12px;
-  bottom: 10px;
+  top: 12px;
+  left: 12px;
+  z-index: 5;
   max-width: min(440px, calc(100% - 24px));
-  padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 0.72rem;
-  background: rgba(2, 6, 23, 0.76);
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.9);
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  background: rgba(2, 6, 23, 0.72);
   backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+@media (min-width: 861px) {
+  .map-status {
+    left: calc(var(--sidebar-width, 320px) + 12px);
+    max-width: min(440px, calc(100% - var(--sidebar-width, 320px) - 24px));
+  }
+}
+
+:global(.app-shell.sidebar-collapsed) .map-status {
+  left: 46px;
+  max-width: min(440px, calc(100% - 58px));
 }
 
 .marker-popup {

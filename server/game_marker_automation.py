@@ -25,6 +25,10 @@ VK = {
 KEY_UP = 0x0002
 LEFT_DOWN = 0x0002
 LEFT_UP = 0x0004
+RIGHT_DOWN = 0x0008
+RIGHT_UP = 0x0010
+MIDDLE_DOWN = 0x0020
+MIDDLE_UP = 0x0040
 METERS_PER_MAP_COORDINATE = 4.59
 
 
@@ -149,6 +153,16 @@ class WindowsGameInput:
         self.user32.mouse_event(LEFT_DOWN, 0, 0, 0, 0)
         self.user32.mouse_event(LEFT_UP, 0, 0, 0, 0)
 
+    def right_button_down(self) -> None:
+        self.user32.mouse_event(RIGHT_DOWN, 0, 0, 0, 0)
+
+    def right_button_up(self) -> None:
+        self.user32.mouse_event(RIGHT_UP, 0, 0, 0, 0)
+
+    def middle_click(self) -> None:
+        self.user32.mouse_event(MIDDLE_DOWN, 0, 0, 0, 0)
+        self.user32.mouse_event(MIDDLE_UP, 0, 0, 0, 0)
+
     def press_enter(self) -> None:
         self.tap_key("ENTER", 0.04)
 
@@ -176,6 +190,7 @@ class GameMarkerController:
         self.sleep = sleep
         self._cancel = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._cached_key_vectors: Optional[dict[str, tuple[float, float]]] = None
 
     @property
     def active(self) -> bool:
@@ -279,12 +294,14 @@ class GameMarkerController:
     ) -> tuple[dict[str, tuple[float, float]], Coordinate]:
         vectors: dict[str, tuple[float, float]] = {}
         latest = current
-        for key in ("W", "S", "D", "A"):
+        for key in ("W", "D"):
             self.game_input.tap_key(key, 0.06)
             self.sleep(0.24)
             moved = self._read_near(box, origin, started, latest)
             vectors[key] = (moved[0] - latest[0], moved[1] - latest[1])
             latest = moved
+        vectors["S"] = (-vectors["W"][0], -vectors["W"][1])
+        vectors["A"] = (-vectors["D"][0], -vectors["D"][1])
         if max(math.hypot(*value) for value in vectors.values()) < 0.5:
             raise RuntimeError("WASD calibration did not move the Palworld map")
         return vectors, latest
@@ -310,7 +327,8 @@ class GameMarkerController:
             (error[0] * vector[0] + error[1] * vector[1])
             / max(0.001, vector[0] ** 2 + vector[1] ** 2),
         )
-        return key, min(0.16, max(0.012, 0.06 * projection * 0.65))
+        maximum_duration = 0.22 if math.hypot(*error) >= 100 else 0.16
+        return key, min(maximum_duration, max(0.012, 0.06 * projection * 0.65))
 
     def _run(
         self,
@@ -322,6 +340,7 @@ class GameMarkerController:
         add_button: Optional[Coordinate],
     ) -> None:
         started = time.monotonic()
+        reused_calibration = False
         try:
             self.update_state(status="calibrating", message="Focusing Palworld and reading coordinates")
             if not self.game_input.focus_game():
@@ -335,9 +354,14 @@ class GameMarkerController:
                 distanceMeters=distance_meters(current, target),
                 message="Calibrating WASD with the cursor fixed at screen center",
             )
-            key_vectors, current = self._calibrate_keys(
-                current, selection_box, selection_point, started
-            )
+            if self._cached_key_vectors is not None and not calibration_only:
+                key_vectors = dict(self._cached_key_vectors)
+                reused_calibration = True
+                self.update_state(message="Using validated WASD calibration")
+            else:
+                key_vectors, current = self._calibrate_keys(
+                    current, selection_box, selection_point, started
+                )
             calibration = {
                 **{
                     key: [round(vector[0], 2), round(vector[1], 2)]
@@ -346,6 +370,7 @@ class GameMarkerController:
             }
             print(f"Game marker calibration: {calibration}", flush=True)
             if calibration_only:
+                self._cached_key_vectors = dict(key_vectors)
                 self.update_state(
                     active=False,
                     status="completed",
@@ -444,12 +469,13 @@ class GameMarkerController:
                     message="Opening the marker dialog",
                 )
                 self.game_input.tap_key("E", 0.12)
-                self.sleep(0.65)
+                self.sleep(0.5)
                 self._check_safety(started)
                 self.update_state(message="Clicking Add")
                 self.game_input.move_cursor(*add_button)
-                self.sleep(0.12)
+                self.sleep(0.06)
                 self.game_input.left_click()
+            self._cached_key_vectors = dict(key_vectors)
             self.update_state(
                 active=False,
                 status="completed",
@@ -464,7 +490,112 @@ class GameMarkerController:
             status = "cancelled" if "cancelled" in str(exc).lower() else "error"
             self.update_state(active=False, status=status, error=str(exc), message=str(exc))
         except Exception as exc:
+            if reused_calibration:
+                self._cached_key_vectors = None
             message = str(exc) or exc.__class__.__name__
             self.update_state(active=False, status="error", error=message, message=message)
         finally:
             self.game_input.release_movement_keys()
+
+
+class MouseComboLoop:
+    """Focus Palworld, hold right mouse, click middle, repeat on an interval."""
+
+    def __init__(
+        self,
+        update_state: StateUpdater,
+        game_input: Optional[WindowsGameInput] = None,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self.update_state = update_state
+        self.game_input = game_input or WindowsGameInput()
+        self.sleep = sleep
+        self._cancel = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._interval = 40.0
+
+    @property
+    def active(self) -> bool:
+        return bool(self._thread and self._thread.is_alive())
+
+    def start(self, interval_seconds: float) -> bool:
+        if self.active:
+            return False
+        self._interval = max(1.0, float(interval_seconds))
+        self._cancel.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        return True
+
+    def cancel(self) -> None:
+        self._cancel.set()
+        try:
+            self.game_input.right_button_up()
+        except Exception:
+            pass
+
+    def _wait(self, seconds: float) -> None:
+        deadline = time.monotonic() + max(0.0, seconds)
+        while time.monotonic() < deadline:
+            if self._cancel.is_set() or self.game_input.escape_pressed():
+                raise RuntimeError("Mouse combo loop cancelled")
+            remaining = deadline - time.monotonic()
+            self.sleep(min(0.2, max(0.05, remaining)))
+
+    def _pulse(self) -> None:
+        if not self.game_input.focus_game():
+            raise RuntimeError("Palworld window was not found or could not receive focus")
+        self.update_state(
+            active=True,
+            status="running",
+            message="Holding right click and pressing middle click",
+            error="",
+        )
+        self.game_input.right_button_down()
+        try:
+            self._wait(0.08)
+            self.game_input.middle_click()
+            self._wait(0.08)
+        finally:
+            self.game_input.right_button_up()
+
+    def _run(self) -> None:
+        finished = "idle"
+        try:
+            self.update_state(
+                active=True,
+                status="running",
+                intervalSeconds=self._interval,
+                message=f"Mouse combo loop every {self._interval:g}s · Esc to stop",
+                error="",
+            )
+            while not self._cancel.is_set():
+                self._pulse()
+                self.update_state(
+                    active=True,
+                    status="waiting",
+                    message=f"Waiting {self._interval:g}s · Esc to stop",
+                    error="",
+                )
+                self._wait(self._interval)
+            finished = "cancelled"
+        except RuntimeError as exc:
+            finished = "cancelled" if "cancelled" in str(exc).lower() else "error"
+            self.update_state(active=False, status=finished, error=str(exc), message=str(exc))
+            return
+        except Exception as exc:
+            message = str(exc) or exc.__class__.__name__
+            self.update_state(active=False, status="error", error=message, message=message)
+            return
+        finally:
+            try:
+                self.game_input.right_button_up()
+            except Exception:
+                pass
+        if finished == "cancelled" or self._cancel.is_set():
+            self.update_state(
+                active=False,
+                status="cancelled",
+                message="Mouse combo loop stopped",
+                error="",
+            )

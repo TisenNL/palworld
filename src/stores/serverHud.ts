@@ -3,19 +3,22 @@ import { computed, onScopeDispose, ref } from 'vue'
 
 import { api } from '@/services/api'
 import type { CoordinateItem } from '@/types/data'
-import type { GameMarkerState, HealthState } from '@/types/server'
+import type { GameMarkerState, HealthState, MouseLoopState } from '@/types/server'
 
 export const useServerHudStore = defineStore('serverHud', () => {
   const health = ref<HealthState | null>(null)
   const checking = ref(false)
   const ocrBusy = ref(false)
   const gameMarker = ref<GameMarkerState | null>(null)
+  const mouseLoop = ref<MouseLoopState | null>(null)
   const error = ref('')
   let timer: number | undefined
   let gameMarkerTimer: number | undefined
+  let mouseLoopTimer: number | undefined
 
   const online = computed(() => health.value?.ok === true)
   const gameMarkerBusy = computed(() => gameMarker.value?.active === true)
+  const mouseLoopBusy = computed(() => mouseLoop.value?.active === true)
 
   async function refreshHealth(): Promise<void> {
     if (checking.value) return
@@ -46,6 +49,11 @@ export const useServerHudStore = defineStore('serverHud', () => {
     gameMarkerTimer = undefined
   }
 
+  function stopMouseLoopPolling(): void {
+    window.clearTimeout(mouseLoopTimer)
+    mouseLoopTimer = undefined
+  }
+
   async function pollGameMarker(): Promise<void> {
     stopGameMarkerPolling()
     try {
@@ -55,6 +63,18 @@ export const useServerHudStore = defineStore('serverHud', () => {
       }
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Game marker status failed'
+    }
+  }
+
+  async function pollMouseLoop(): Promise<void> {
+    stopMouseLoopPolling()
+    try {
+      mouseLoop.value = await api.getMouseLoopState()
+      if (mouseLoop.value.active) {
+        mouseLoopTimer = window.setTimeout(() => void pollMouseLoop(), 800)
+      }
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : 'Mouse loop status failed'
     }
   }
 
@@ -74,6 +94,25 @@ export const useServerHudStore = defineStore('serverHud', () => {
       await api.cancelGameMarker()
     } finally {
       await pollGameMarker()
+    }
+  }
+
+  async function startMouseLoop(intervalSeconds: number): Promise<void> {
+    error.value = ''
+    try {
+      await api.startMouseLoop(intervalSeconds)
+      await pollMouseLoop()
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : 'Mouse combo loop failed'
+      throw cause
+    }
+  }
+
+  async function stopMouseLoop(): Promise<void> {
+    try {
+      await api.stopMouseLoop()
+    } finally {
+      await pollMouseLoop()
     }
   }
 
@@ -120,6 +159,7 @@ export const useServerHudStore = defineStore('serverHud', () => {
   onScopeDispose(() => {
     stopMonitoring()
     stopGameMarkerPolling()
+    stopMouseLoopPolling()
   })
 
   return {
@@ -129,6 +169,8 @@ export const useServerHudStore = defineStore('serverHud', () => {
     ocrBusy,
     gameMarker,
     gameMarkerBusy,
+    mouseLoop,
+    mouseLoopBusy,
     error,
     startMonitoring,
     stopMonitoring,
@@ -139,5 +181,8 @@ export const useServerHudStore = defineStore('serverHud', () => {
     startGameMarker,
     cancelGameMarker,
     pollGameMarker,
+    startMouseLoop,
+    stopMouseLoop,
+    pollMouseLoop,
   }
 })

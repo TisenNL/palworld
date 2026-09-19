@@ -14,6 +14,7 @@ class FakeGameInput:
         self.clicks = 0
         self.enters = 0
         self.released = False
+        self.key_taps = []
 
     def focus_game(self) -> bool:
         return self.focus
@@ -32,6 +33,7 @@ class FakeGameInput:
         self.coordinate[1] += dy
 
     def tap_key(self, key: str, duration: float) -> None:
+        self.key_taps.append(key)
         scale = duration / 0.08
         vectors = {"W": (0, -8), "S": (0, 8), "D": (8, 0), "A": (-8, 0)}
         if key in vectors:
@@ -116,6 +118,7 @@ class GameMarkerAutomationTest(unittest.TestCase):
         self.assertEqual("completed", state["status"])
         self.assertNotEqual([40, -30], state["current"])
         self.assertEqual(0, game_input.clicks)
+        self.assertEqual(["W", "D"], game_input.key_taps)
 
     def test_stops_when_palworld_does_not_have_focus(self):
         game_input = FakeGameInput(focus=False)
@@ -152,6 +155,49 @@ class GameMarkerAutomationTest(unittest.TestCase):
 
     def test_rejects_singular_mouse_calibration(self):
         self.assertIsNone(solve_mouse_delta((10, 10), (1, 1), (2, 2)))
+
+    def test_accelerates_only_when_far_from_the_target(self):
+        controller = GameMarkerController(lambda _box: (0, 0), lambda **_changes: None)
+        vectors = {"W": (0, -8), "S": (0, 8), "D": (8, 0), "A": (-8, 0)}
+
+        _near_key, near_duration = controller._best_key((80, 0), vectors)
+        _far_key, far_duration = controller._best_key((200, 0), vectors)
+
+        self.assertLessEqual(near_duration, 0.16)
+        self.assertGreater(far_duration, 0.16)
+        self.assertLessEqual(far_duration, 0.22)
+
+    def test_reuses_calibration_only_after_a_successful_run(self):
+        game_input = FakeGameInput()
+        reads = 0
+
+        def read_coordinate(_box):
+            nonlocal reads
+            reads += 1
+            return round(game_input.coordinate[0]), round(game_input.coordinate[1])
+
+        controller = GameMarkerController(
+            read_coordinate,
+            lambda **_changes: None,
+            game_input=game_input,
+            timeout_seconds=2,
+            sleep=lambda _seconds: None,
+        )
+        arguments = ((40, -30), (450, 475, 550, 525), (500, 500), False, False, None)
+
+        self.assertTrue(controller.start(*arguments))
+        controller._thread.join(2)
+        first_run_taps = len(game_input.key_taps)
+        first_run_reads = reads
+        game_input.key_taps.clear()
+
+        self.assertTrue(controller.start(*arguments))
+        controller._thread.join(2)
+        second_run_reads = reads - first_run_reads
+
+        self.assertGreaterEqual(first_run_taps, 2)
+        self.assertEqual([], game_input.key_taps)
+        self.assertLess(second_run_reads, first_run_reads)
 
 
 if __name__ == "__main__":

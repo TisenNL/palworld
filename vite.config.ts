@@ -14,6 +14,7 @@ const helperRoutes = [
   '/ocr-select',
   '/ocr-state',
   '/game-marker',
+  '/mouse-loop',
   '/map-tile',
   '/map-icon',
 ]

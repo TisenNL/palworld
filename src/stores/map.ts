@@ -28,10 +28,14 @@ export const useMapStore = defineStore('map', () => {
       layer.storage === 'effigies'
         ? `${item.type ?? ''} Effigy #${item.n ?? ''}`
         : `${item.n ? `${item.n}. ` : ''}${item.name ?? item.type ?? layer.label}`
-    const label = item.volume ? `${baseLabel} · ${item.volume} nodes` : baseLabel
+    const sealedLabel =
+      item.tag === 'Sealed Realm'
+        ? `${baseLabel} · Sealed Realm${item.type ? ` (${item.type})` : ''}`
+        : baseLabel
+    const label = item.volume ? `${sealedLabel} · ${item.volume} nodes` : sealedLabel
     const alphaIcon =
       layer.storage === 'alphas'
-        ? palIcons.value.get((item.name ?? '').toLocaleLowerCase())
+        ? item.icon || palIcons.value.get((item.name ?? '').toLocaleLowerCase())
         : undefined
     return {
       id: `${layer.id}:${item.id}`,
@@ -53,14 +57,23 @@ export const useMapStore = defineStore('map', () => {
       if (!preferences.values.mapLayers[layer.id]) continue
       for (const item of layerItems(checklist.data, layer)) {
         const marker = markerFor(layer, item)
-        if (preferences.values.mapHideDone && marker.done) continue
         if (query && !`${marker.label} ${item.x} ${item.y}`.toLocaleLowerCase().includes(query)) {
           continue
         }
         output.push(marker)
       }
     }
-    return output.sort((a, b) => Number(b.done) - Number(a.done))
+    const priority = (marker: MapMarker): number => {
+      if (marker.storage === 'alphas') return 3
+      if (marker.storage === 'bounties' || marker.storage === 'towers') return 2
+      if (marker.done) return 0
+      return 1
+    }
+    return output.sort((a, b) => {
+      const byPriority = priority(a) - priority(b)
+      if (byPriority !== 0) return byPriority
+      return Number(a.done) - Number(b.done)
+    })
   })
 
   function nearestSameType(

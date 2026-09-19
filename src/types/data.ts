@@ -12,6 +12,7 @@ const coordinateSchema = z.object({
   kind: z.string().nullable().optional(),
   series: z.string().nullable().optional(),
   tag: z.string().nullable().optional(),
+  icon: z.string().nullable().optional(),
   volume: z.number().int().positive().nullable().optional(),
 })
 

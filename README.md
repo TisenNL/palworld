@@ -15,7 +15,13 @@ Vue 3, TypeScript, Pinia, PrimeVue, and a local Python helper for OCR and in-gam
 
 ## Run
 
-Use `start.bat` on Windows. It installs dependencies when needed, builds the Vue application, starts the local helper, and opens `http://127.0.0.1:8765/`.
+```bash
+py -3 run.py
+```
+
+Builds the Vue app when needed, starts the local helper, and opens `http://127.0.0.1:8765/`. Stop with **Ctrl+C**.
+
+On Windows you can also double-click `start.bat` (same entrypoint).
 
 ## Validate
 

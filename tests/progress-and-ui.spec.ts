@@ -17,6 +17,28 @@ describe('progress contract', () => {
     expect(payload.checks.effigies).toEqual({ ativo: true })
     expect(payload.checks.alphas).toEqual({})
     expect(payload.prefs.sidebarWidth).toBe(320)
+    expect(payload.cake).toBeUndefined()
+  })
+
+  it('preserves cake calculator state in the progress payload', () => {
+    const payload = progressSchema.parse({
+      version: 2,
+      revision: 5,
+      updatedAt: '2026-09-19T00:00:00Z',
+      checks: emptyChecks(),
+      breedOwned: {},
+      prefs: {},
+      cake: {
+        recipe: 'mushroom',
+        gold: 12000,
+        target: 40,
+        prices: { wheat: 59, berry: 42 },
+        stock: { flour: 12, honey: 3 },
+      },
+    })
+    expect(payload.cake?.recipe).toBe('mushroom')
+    expect(payload.cake?.gold).toBe(12000)
+    expect(payload.cake?.stock.flour).toBe(12)
   })
 })
 

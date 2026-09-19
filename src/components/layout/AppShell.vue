@@ -25,8 +25,11 @@ onBeforeUnmount(() => document.documentElement.classList.remove('app-dark'))
 <template>
   <div
     class="app-shell app-dark"
+    :class="{ 'sidebar-collapsed': preferences.values.sidebarCollapsed }"
     :style="{
-      '--sidebar-width': `${preferences.values.sidebarWidth}px`,
+      '--sidebar-width': preferences.values.sidebarCollapsed
+        ? '0px'
+        : `${preferences.values.sidebarWidth}px`,
       '--sidebar-alpha': `${Math.max(0.18, 1 - preferences.values.sidebarTransparency / 100)}`,
     }"
   >

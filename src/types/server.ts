@@ -38,6 +38,16 @@ export const gameMarkerStateSchema = z.object({
   error: z.string(),
 })
 
+export const mouseLoopStateSchema = z.object({
+  ok: z.boolean(),
+  active: z.boolean(),
+  status: z.enum(['idle', 'running', 'waiting', 'cancelled', 'error']),
+  intervalSeconds: z.number().nonnegative().default(40),
+  message: z.string().default(''),
+  error: z.string().default(''),
+})
+
 export type HealthState = z.infer<typeof healthSchema>
 export type OcrState = z.infer<typeof ocrStateSchema>
 export type GameMarkerState = z.infer<typeof gameMarkerStateSchema>
+export type MouseLoopState = z.infer<typeof mouseLoopStateSchema>

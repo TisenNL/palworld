@@ -343,6 +343,21 @@ def build() -> dict:
     fixed = extract_array(src, "fixedDungeon")
     cluster_volumes = calculate_cluster_volumes(fixed)
 
+    # Sealed Realm bosses that exist in-game but are missing from PalDB Alpha Pal markers.
+    # Coordinates match the Sealed Realm entrance / wiki.gg Sealed Realms list.
+    sealed_realm_alphas = (
+        {
+            "id": "eye-of-cthulhu-45",
+            "lv": 45,
+            "name": "Eye of Cthulhu",
+            "x": -422,
+            "y": -795,
+            "tag": "Sealed Realm",
+            "type": "Sealed Realm of Terraria",
+            "icon": "/alpha-icons/eye-of-cthulhu-45.webp",
+        },
+    )
+
     alphas = []
     for row in fixed:
         if row.get("type") != "Alpha Pal":
@@ -351,13 +366,28 @@ def build() -> dict:
         pos = row.get("pos") or {}
         x, y = rpos_to_ipos(float(pos["X"]), float(pos["Y"]))
         lv = row.get("lv")
-        alphas.append({
+        comment = str(row.get("comment") or "")
+        entry = {
             "id": slug(f"{name}-{lv}"),
             "lv": lv,
             "name": name,
             "x": x,
             "y": y,
-        })
+        }
+        if comment == "Dungeon Boss":
+            entry["tag"] = "Sealed Realm"
+        local_icon = ROOT / "public" / "alpha-icons" / f"{entry['id']}.webp"
+        if local_icon.is_file():
+            entry["icon"] = f"/alpha-icons/{local_icon.name}"
+        elif row.get("fixed_icon"):
+            entry["icon"] = str(row.get("fixed_icon"))
+        alphas.append(entry)
+    existing = {(a["name"].lower(), a["lv"]) for a in alphas}
+    for sealed in sealed_realm_alphas:
+        key = (sealed["name"].lower(), sealed["lv"])
+        if key not in existing:
+            alphas.append(dict(sealed))
+            existing.add(key)
     alphas.sort(key=lambda a: (a["lv"] is None, a["lv"] or 0, a["name"]))
     for i, a in enumerate(alphas, 1):
         a["n"] = i

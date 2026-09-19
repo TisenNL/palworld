@@ -1,6 +1,6 @@
 """
 Fixed coordinate tooltip for the map HUD, integrated with the Vue application.
-Usage: py -3 -m server.coord_tooltip or start.bat
+Usage: py -3 run.py  (or py -3 -m server.coord_tooltip / start.bat)
 """
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import io
 import json
 import mimetypes
 import os
+import signal
 import threading
 import time
 import tkinter as tk
@@ -22,7 +23,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, unquote, urlparse
 
 from PIL import Image, ImageFilter, ImageGrab, ImageOps
-from .game_marker_automation import GameMarkerController
+from .game_marker_automation import GameMarkerController, MouseComboLoop, WindowsGameInput
 
 PORT = 8765
 VERSION = "tooltip-v20-game-marker"
@@ -31,6 +32,18 @@ DIST_ROOT = PROJECT_ROOT / "dist"
 PROGRESS_PATH = PROJECT_ROOT / ".local" / "progress.json"
 LEGACY_PROGRESS_PATH = PROJECT_ROOT / "progress.json"
 PROGRESS_LOCK = threading.Lock()
+CHECK_KEYS = (
+    "alphas",
+    "bounties",
+    "effigies",
+    "dungeons",
+    "towers",
+    "journals",
+    "oilrigs",
+    "camps",
+    "collectibles",
+    "travel",
+)
 
 # MapGenie Palpagos 1.0, pyramid z8-z16
 MAPGENIE_TILE_BASE = "https://tiles.mapgenie.io/games/palworld/1-0/default-v1"
@@ -66,24 +79,25 @@ game_marker_state = {
 overlay: Optional["HudTooltip"] = None
 ocr_selector: Optional["OcrSelector"] = None
 game_marker_controller: Optional[GameMarkerController] = None
-
-CHECK_KEYS = (
-    "alphas",
-    "bounties",
-    "effigies",
-    "dungeons",
-    "towers",
-    "journals",
-    "oilrigs",
-    "camps",
-    "collectibles",
-    "travel",
-)
+mouse_loop_lock = threading.Lock()
+mouse_loop_state = {
+    "active": False,
+    "status": "idle",
+    "intervalSeconds": 40.0,
+    "message": "",
+    "error": "",
+}
+mouse_loop_controller: Optional[MouseComboLoop] = None
 
 
 def update_game_marker_state(**changes) -> None:
     with game_marker_lock:
         game_marker_state.update(changes)
+
+
+def update_mouse_loop_state(**changes) -> None:
+    with mouse_loop_lock:
+        mouse_loop_state.update(changes)
 
 
 def read_game_coordinate(bbox: Tuple[int, int, int, int]) -> Optional[Tuple[int, int]]:
@@ -178,7 +192,8 @@ def load_progress_file() -> dict:
             data = {}
         checks = data.get("checks") if isinstance(data.get("checks"), dict) else {}
         prefs = data.get("prefs") if isinstance(data.get("prefs"), dict) else {}
-        return {
+        cake = data.get("cake") if isinstance(data.get("cake"), dict) else None
+        result = {
             "version": int(data.get("version") or 1),
             "revision": max(0, int(data.get("revision") or 0)),
             "checks": {
@@ -189,12 +204,16 @@ def load_progress_file() -> dict:
             "prefs": prefs,
             "updatedAt": str(data.get("updatedAt") or ""),
         }
+        if cake is not None:
+            result["cake"] = cake
+        return result
 
 
 def save_progress_file(body: dict) -> dict:
     checks_in = body.get("checks") if isinstance(body.get("checks"), dict) else {}
     prefs_in = body.get("prefs") if isinstance(body.get("prefs"), dict) else {}
     owned_in = body.get("breedOwned") if isinstance(body.get("breedOwned"), dict) else {}
+    cake_in = body.get("cake") if isinstance(body.get("cake"), dict) else None
     checks: dict = {}
     for key in CHECK_KEYS:
         raw = checks_in.get(key)
@@ -211,6 +230,12 @@ def save_progress_file(body: dict) -> dict:
         "breedOwned": breed_owned,
         "prefs": prefs_in,
     }
+    if cake_in is not None:
+        payload["cake"] = cake_in
+    else:
+        existing = load_progress_file()
+        if isinstance(existing.get("cake"), dict):
+            payload["cake"] = existing["cake"]
     with PROGRESS_LOCK:
         PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp = PROGRESS_PATH.with_suffix(".json.tmp")
@@ -283,7 +308,27 @@ class HudTooltip:
         print("Tooltip OFF (Esc/hide)", flush=True)
 
     def run(self) -> None:
-        self.root.mainloop()
+        def request_quit(*_args) -> None:
+            try:
+                self.root.after(0, self.root.quit)
+            except Exception:
+                pass
+
+        try:
+            signal.signal(signal.SIGINT, request_quit)
+            if hasattr(signal, "SIGTERM"):
+                signal.signal(signal.SIGTERM, request_quit)
+        except Exception:
+            pass
+
+        def pump() -> None:
+            self.root.after(200, pump)
+
+        pump()
+        try:
+            self.root.mainloop()
+        except KeyboardInterrupt:
+            request_quit()
 
 
 class OcrSelector:
@@ -395,6 +440,27 @@ class OcrSelector:
             args=(bbox,),
             daemon=True,
         ).start())
+
+    def read_fixed(self) -> None:
+        self.win.withdraw()
+        with ocr_lock:
+            ocr_state.update(active=True, status="reading", text="", error="")
+        threading.Thread(target=self._run_fixed_ocr, daemon=True).start()
+
+    def _run_fixed_ocr(self) -> None:
+        try:
+            game_input = WindowsGameInput()
+            if game_input.find_window():
+                game_input.focus_game()
+                time.sleep(0.1)
+            bbox = game_coordinate_box()
+            copied = self.recognize_bbox(bbox, save_debug=True)
+            self.root.after(0, lambda value=copied: self._copy_result(value))
+        except Exception as exc:
+            message = str(exc) or exc.__class__.__name__
+            with ocr_lock:
+                ocr_state.update(active=False, status="error", text="", error=message)
+            print(f"OCR error: {message}", flush=True)
 
     def _recognize(self, bbox: Tuple[int, int, int, int]) -> None:
         try:
@@ -818,6 +884,14 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"ok": True, **snap})
             return
 
+        if parsed.path == "/mouse-loop/state":
+            with mouse_loop_lock:
+                snap = dict(mouse_loop_state)
+            active = bool(mouse_loop_controller and mouse_loop_controller.active)
+            snap["active"] = active or bool(snap.get("active"))
+            self._json(200, {"ok": True, **snap})
+            return
+
         if parsed.path.startswith("/health") or parsed.path.startswith("/state"):
             with state_lock:
                 snap = dict(state)
@@ -971,6 +1045,54 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"ok": True, "status": "cancelled"})
             return
 
+        if self.path.startswith("/mouse-loop/start"):
+            if mouse_loop_controller is None:
+                self._json(503, {"ok": False, "error": "Mouse loop unavailable"})
+                return
+            try:
+                interval = float(body.get("intervalSeconds", 40))
+            except (TypeError, ValueError):
+                self._json(400, {"ok": False, "error": "Invalid interval"})
+                return
+            interval = max(1.0, min(3600.0, interval))
+            with game_marker_lock:
+                gm_busy = bool(game_marker_state["active"])
+            with ocr_lock:
+                ocr_busy = ocr_state["status"] in ("selecting", "reading")
+            if gm_busy or ocr_busy or mouse_loop_controller.active:
+                self._json(409, {"ok": False, "error": "Another automation is already active"})
+                return
+            update_mouse_loop_state(
+                active=True,
+                status="running",
+                intervalSeconds=interval,
+                message=f"Starting mouse combo loop every {interval:g}s",
+                error="",
+            )
+            if not mouse_loop_controller.start(interval):
+                update_mouse_loop_state(
+                    active=False,
+                    status="error",
+                    message="Could not start mouse combo loop",
+                    error="Could not start mouse combo loop",
+                )
+                self._json(409, {"ok": False, "error": "Mouse combo loop is already active"})
+                return
+            self._json(200, {"ok": True, "status": "running", "intervalSeconds": interval})
+            return
+
+        if self.path.startswith("/mouse-loop/stop"):
+            if mouse_loop_controller is not None:
+                mouse_loop_controller.cancel()
+            update_mouse_loop_state(
+                active=False,
+                status="cancelled",
+                message="Mouse combo loop stopped",
+                error="",
+            )
+            self._json(200, {"ok": True, "status": "cancelled"})
+            return
+
         if self.path.startswith("/set"):
             x = int(body.get("x", 0))
             y = int(body.get("y", 0))
@@ -998,11 +1120,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
             with ocr_lock:
                 busy = ocr_state["status"] in ("selecting", "reading")
-            if busy:
-                self._json(409, {"ok": False, "error": "OCR is already active"})
+            with game_marker_lock:
+                gm_busy = bool(game_marker_state["active"])
+            if busy or gm_busy or (game_marker_controller and game_marker_controller.active):
+                self._json(409, {"ok": False, "error": "OCR or game marker automation is active"})
                 return
-            overlay.root.after(0, ocr_selector.activate)
-            self._json(200, {"ok": True, "status": "selecting"})
+            overlay.root.after(0, ocr_selector.read_fixed)
+            self._json(200, {"ok": True, "status": "reading"})
             return
 
         if self.path.startswith("/progress"):
@@ -1024,13 +1148,14 @@ def start_server() -> None:
 
 
 def main() -> None:
-    global overlay, ocr_selector, game_marker_controller
+    global overlay, ocr_selector, game_marker_controller, mouse_loop_controller
     overlay = HudTooltip()
     ocr_selector = OcrSelector(overlay.root)
     game_marker_controller = GameMarkerController(
         read_game_coordinate,
         update_game_marker_state,
     )
+    mouse_loop_controller = MouseComboLoop(update_mouse_loop_state)
     threading.Thread(target=start_server, daemon=True).start()
     ml, mt, mw, mh = largest_monitor()
     ax, ay = hud_anchor_xy()
@@ -1039,9 +1164,12 @@ def main() -> None:
     print(f"  Monitor {mw}x{mh} @ ({ml},{mt})", flush=True)
     print(f"  Fixed HUD tooltip @ ({ax}, {ay})", flush=True)
     print(f"  http://127.0.0.1:{PORT}/", flush=True)
-    print("  Esc clears HUD · browser Stop server ends this process", flush=True)
+    print("  Esc clears HUD · Ctrl+C stops this process", flush=True)
     print("=" * 50, flush=True)
-    overlay.run()
+    try:
+        overlay.run()
+    except KeyboardInterrupt:
+        print("\nInterrupted.", flush=True)
     print("Exiting.", flush=True)
     os._exit(0)
 

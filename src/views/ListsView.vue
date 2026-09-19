@@ -64,7 +64,7 @@ const filtered = computed(() => {
         .includes(normalized)
     )
       return false
-    return !preferences.values.hideDone || !checklist.isDone(item.storage, item.id)
+    return true
   })
 })
 
@@ -77,7 +77,8 @@ const progress = computed(() =>
 
 const itemLabel = (item: (typeof filtered.value)[number]): string => {
   const label = item.name ?? `${item.type ?? item.layerLabel}${item.n ? ` #${item.n}` : ''}`
-  return item.volume ? `${label} · ${item.volume} nodes` : label
+  const sealed = item.tag === 'Sealed Realm' ? `${label} · Sealed Realm` : label
+  return item.volume ? `${sealed} · ${item.volume} nodes` : sealed
 }
 
 function panelOpen(key: string, fallback = true): boolean {
@@ -86,6 +87,10 @@ function panelOpen(key: string, fallback = true): boolean {
 
 function setPanelOpen(key: string, value: boolean): void {
   preferences.values.sideBlockOpen[key] = value
+}
+
+function toggleSidebar(): void {
+  preferences.values.sidebarCollapsed = !preferences.values.sidebarCollapsed
 }
 
 function setFiltered(done: boolean): void {
@@ -147,7 +152,7 @@ watch(
 
 <template>
   <div class="workspace lists-view">
-    <aside class="sidebar">
+    <aside class="sidebar" :aria-hidden="preferences.values.sidebarCollapsed">
       <div class="sidebar-scroll">
         <CompactPanel
           title="Search and filters"
@@ -164,10 +169,6 @@ watch(
               fluid
               aria-label="Filter by type"
             />
-            <label class="inline-check">
-              <Checkbox v-model="preferences.values.hideDone" binary />
-              Hide completed
-            </label>
           </div>
         </CompactPanel>
 
@@ -255,6 +256,19 @@ watch(
       </div>
     </aside>
 
+    <button
+      type="button"
+      class="sidebar-edge-toggle"
+      :aria-label="preferences.values.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+      :title="preferences.values.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+      @click="toggleSidebar"
+    >
+      <i
+        :class="preferences.values.sidebarCollapsed ? 'pi pi-angle-right' : 'pi pi-angle-left'"
+        aria-hidden="true"
+      />
+    </button>
+
     <section class="content-pane list-content">
       <header class="list-header">
         <div>
@@ -322,14 +336,6 @@ watch(
 .layer-list {
   display: grid;
   gap: 7px;
-}
-
-.inline-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 0.82rem;
 }
 
 .category-accordions {

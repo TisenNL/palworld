@@ -33,15 +33,24 @@ export const mapCameraSchema = z.object({
 })
 
 export const preferencesSchema = z.object({
-  hideDone: z.boolean().default(false),
   mapLayers: z.record(z.string(), z.boolean()).default({}),
-  mapHideDone: z.boolean().default(false),
   mapCam: mapCameraSchema.nullable().default(null),
   sidebarWidth: z.number().min(260).max(720).default(320),
   sidebarTransparency: z.number().min(0).max(100).default(26),
+  sidebarCollapsed: z.boolean().default(false),
   sideBlockOpen: z.record(z.string(), z.boolean()).default({}),
   mapBrowseGroup: z.string().default(''),
   listBrowseGroup: z.string().default(''),
+})
+
+const cakeValuesSchema = z.record(z.string(), z.number().nonnegative()).default({})
+
+export const cakeStateSchema = z.object({
+  recipe: z.string().default('cake'),
+  gold: z.number().nonnegative().default(0),
+  target: z.number().nonnegative().default(0),
+  prices: cakeValuesSchema,
+  stock: cakeValuesSchema,
 })
 
 export const progressSchema = z.object({
@@ -51,9 +60,11 @@ export const progressSchema = z.object({
   checks: checksSchema,
   breedOwned: checkedItemsSchema.default({}),
   prefs: preferencesSchema,
+  cake: cakeStateSchema.optional(),
 })
 
 export type Preferences = z.infer<typeof preferencesSchema>
+export type CakeState = z.infer<typeof cakeStateSchema>
 export type ProgressPayload = z.infer<typeof progressSchema>
 
 export function emptyChecks(): Checks {

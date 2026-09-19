@@ -20,6 +20,7 @@ import {
   type ProgressPayload,
 } from '@/types/progress'
 import { usePreferencesStore } from './preferences'
+import { useCakeStore } from './cake'
 
 const storageKeys: Record<StorageKey, string> = {
   alphas: 'palworld-alpha-pals-checklist-v1',
@@ -117,6 +118,7 @@ export const useChecklistStore = defineStore('checklist', () => {
 
   function payload(): ProgressPayload {
     const preferences = usePreferencesStore()
+    const cake = useCakeStore()
     const result: ProgressPayload = {
       version: 2,
       revision: ++revision,
@@ -124,6 +126,7 @@ export const useChecklistStore = defineStore('checklist', () => {
       checks: structuredClone(toRaw(checked)),
       breedOwned: structuredClone(toRaw(breedOwned)),
       prefs: structuredClone(toRaw(preferences.values)),
+      cake: cake.snapshot(),
     }
     localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(result))
     return result
@@ -152,6 +155,7 @@ export const useChecklistStore = defineStore('checklist', () => {
     Object.assign(breedOwned, next.breedOwned)
     localStorage.setItem(BREED_OWNED_STORAGE_KEY, JSON.stringify(breedOwned))
     usePreferencesStore().apply(next.prefs)
+    if (next.cake) useCakeStore().hydrate(next.cake)
     scheduleSave()
   }
 
@@ -196,6 +200,9 @@ export const useChecklistStore = defineStore('checklist', () => {
         if (!hasLocalPreferences || current === local) {
           usePreferencesStore().apply(current.prefs)
         }
+        if (current.cake) {
+          useCakeStore().hydrate(current.cake)
+        }
       }
       localStorage.setItem(BREED_OWNED_STORAGE_KEY, JSON.stringify(breedOwned))
       const preferences = usePreferencesStore()
@@ -205,7 +212,8 @@ export const useChecklistStore = defineStore('checklist', () => {
         }
       }
       initialized.value = true
-      if (recoveredBreedSelection) scheduleSave()
+      const needsCakeMirror = !current?.cake && Boolean(localStorage.getItem('palworld-cake-state-v1'))
+      if (recoveredBreedSelection || needsCakeMirror) scheduleSave()
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Failed to load application data'
       throw cause

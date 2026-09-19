@@ -8,32 +8,62 @@ import {
   priceDefaults,
   type CakeValues,
 } from '@/domain/cakes'
+import type { CakeState } from '@/types/progress'
+import { useChecklistStore } from './checklist'
 
 const STORAGE_KEY = 'palworld-cake-state-v1'
 
-interface StoredCake {
-  recipe?: string
-  gold?: number
-  target?: number
-  prices?: Partial<CakeValues>
-  stock?: Partial<CakeValues>
+function clampNumber(value: unknown): number {
+  const next = Number(value)
+  return Number.isFinite(next) && next > 0 ? next : 0
 }
 
-function readState(): StoredCake {
+function mergeValues(base: CakeValues, patch?: Partial<CakeValues> | Record<string, number>): CakeValues {
+  const next = { ...base }
+  if (!patch) return next
+  for (const key of Object.keys(next) as Array<keyof CakeValues>) {
+    if (patch[key] != null) next[key] = clampNumber(patch[key])
+  }
+  return next
+}
+
+function readState(): CakeState {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as StoredCake
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Partial<CakeState>
+    return {
+      recipe: typeof raw.recipe === 'string' ? raw.recipe : 'cake',
+      gold: clampNumber(raw.gold),
+      target: clampNumber(raw.target),
+      prices: mergeValues(priceDefaults, raw.prices),
+      stock: mergeValues(emptyStock, raw.stock),
+    }
   } catch {
-    return {}
+    return {
+      recipe: 'cake',
+      gold: 0,
+      target: 0,
+      prices: { ...priceDefaults },
+      stock: { ...emptyStock },
+    }
+  }
+}
+
+function writeState(state: CakeState): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  } catch {
+    /* quota / private mode — disco via /progress ainda cobre */
   }
 }
 
 export const useCakeStore = defineStore('cake', () => {
   const stored = readState()
-  const recipeId = ref(stored.recipe ?? 'cake')
-  const gold = ref(Math.max(0, Number(stored.gold) || 0))
-  const target = ref(Math.max(0, Number(stored.target) || 0))
-  const prices = reactive<CakeValues>({ ...priceDefaults, ...stored.prices })
-  const stock = reactive<CakeValues>({ ...emptyStock, ...stored.stock })
+  const recipeId = ref(stored.recipe)
+  const gold = ref(stored.gold)
+  const target = ref(stored.target)
+  const prices = reactive<CakeValues>({ ...stored.prices })
+  const stock = reactive<CakeValues>({ ...stored.stock })
+  let suppressPersist = false
 
   const recipe = computed(
     () => cakeRecipes.find((item) => item.id === recipeId.value) ?? cakeRecipes[0]!,
@@ -42,19 +72,39 @@ export const useCakeStore = defineStore('cake', () => {
     calculateCakes(gold.value, target.value, recipe.value, stock, prices),
   )
 
+  function snapshot(): CakeState {
+    return {
+      recipe: recipeId.value,
+      gold: gold.value,
+      target: target.value,
+      prices: { ...prices },
+      stock: { ...stock },
+    }
+  }
+
+  function hydrate(next: CakeState | undefined | null): void {
+    if (!next) return
+    suppressPersist = true
+    try {
+      recipeId.value = typeof next.recipe === 'string' ? next.recipe : recipeId.value
+      gold.value = clampNumber(next.gold)
+      target.value = clampNumber(next.target)
+      Object.assign(prices, mergeValues(priceDefaults, next.prices))
+      Object.assign(stock, mergeValues(emptyStock, next.stock))
+      writeState(snapshot())
+    } finally {
+      suppressPersist = false
+    }
+  }
+
   watch(
     [recipeId, gold, target, prices, stock],
     () => {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({
-          recipe: recipeId.value,
-          gold: gold.value,
-          target: target.value,
-          prices,
-          stock,
-        }),
-      )
+      if (suppressPersist) return
+      const state = snapshot()
+      writeState(state)
+      const checklist = useChecklistStore()
+      if (checklist.initialized) checklist.scheduleSave()
     },
     { deep: true },
   )
@@ -81,6 +131,8 @@ export const useCakeStore = defineStore('cake', () => {
     recipes: cakeRecipes,
     recipe,
     result,
+    snapshot,
+    hydrate,
     resetPrices,
     applyPurchase,
   }

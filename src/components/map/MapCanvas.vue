@@ -21,7 +21,7 @@ const canvas = ref<HTMLCanvasElement | null>(null)
 const hasVisibleTile = ref(false)
 const mapLoadFailed = ref(false)
 const tileCache = new LruCache<string, ImageBitmap>(320)
-const iconCache = new LruCache<string, CanvasImageSource>(180)
+const iconCache = new LruCache<string, CanvasImageSource>(420)
 const tileLoading = new Set<string>()
 const iconLoading = new Set<string>()
 const failedTiles = new Map<string, { attempts: number; retryAt: number }>()
@@ -143,7 +143,11 @@ function requestIcon(source: string, enhance: boolean): void {
   )
     return
   iconLoading.add(source)
-  iconQueue.push({ key: source, url: api.mapIconUrl(source), enhance })
+  const url =
+    source.startsWith('/') || source.startsWith('data:') || source.startsWith('blob:')
+      ? source
+      : api.mapIconUrl(source)
+  iconQueue.push({ key: source, url, enhance })
   pumpIcons()
 }
 
@@ -252,40 +256,58 @@ function drawMarkers(context: CanvasRenderingContext2D, width: number, height: n
   const markerSize = Math.max(18, Math.min(34, 22 + props.camera.scale * 16))
   for (const marker of props.markers) {
     const point = markerPosition(marker)
-    if (
-      point.x < -markerSize ||
-      point.y < -markerSize ||
-      point.x > width + markerSize ||
-      point.y > height + markerSize
-    )
-      continue
+    const isAlpha = marker.storage === 'alphas'
+    const size = isAlpha ? Math.max(markerSize, Math.min(48, 28 + props.camera.scale * 28)) : markerSize
+    if (point.x < -size || point.y < -size || point.x > width + size || point.y > height + size) continue
     context.save()
     if (marker.done) context.globalAlpha = 0.5
     const icon = marker.iconUrl ? iconCache.get(marker.iconUrl) : undefined
     if (marker.iconUrl && !icon) {
-      requestIcon(marker.iconUrl, marker.storage !== 'alphas')
+      requestIcon(marker.iconUrl, false)
+    }
+    context.beginPath()
+    context.fillStyle = isAlpha ? 'rgba(8, 14, 28, 0.92)' : 'rgba(5, 10, 20, 0.72)'
+    context.arc(point.x, point.y, size * (isAlpha ? 0.52 : 0.46), 0, Math.PI * 2)
+    context.fill()
+    if (isAlpha) {
+      context.beginPath()
+      context.strokeStyle = 'rgba(255,255,255,0.88)'
+      context.lineWidth = 2
+      context.arc(point.x, point.y, size * 0.52, 0, Math.PI * 2)
+      context.stroke()
     }
     if (icon) {
       context.imageSmoothingEnabled = true
       context.imageSmoothingQuality = 'high'
-      context.drawImage(
-        icon,
-        point.x - markerSize / 2,
-        point.y - markerSize / 2,
-        markerSize,
-        markerSize,
-      )
+      const pad = isAlpha ? size * 0.12 : 0
+      context.drawImage(icon, point.x - size / 2 + pad, point.y - size / 2 + pad, size - pad * 2, size - pad * 2)
     } else {
       context.beginPath()
       context.fillStyle = marker.color
-      context.arc(point.x, point.y, markerSize * 0.32, 0, Math.PI * 2)
+      context.arc(point.x, point.y, size * 0.32, 0, Math.PI * 2)
       context.fill()
+    }
+    if (isAlpha && marker.item.lv != null) {
+      const badge = String(marker.item.lv)
+      context.font = `bold ${Math.max(10, Math.round(size * 0.28))}px Segoe UI, sans-serif`
+      context.textAlign = 'center'
+      context.textBaseline = 'middle'
+      const bx = point.x + size * 0.34
+      const by = point.y + size * 0.34
+      const bw = Math.max(16, badge.length * 7 + 8)
+      const bh = Math.max(14, size * 0.3)
+      context.fillStyle = 'rgba(15, 23, 42, 0.92)'
+      context.beginPath()
+      context.roundRect(bx - bw / 2, by - bh / 2, bw, bh, 6)
+      context.fill()
+      context.fillStyle = '#fff'
+      context.fillText(badge, bx, by + 0.5)
     }
     if (hoverMarker?.id === marker.id) {
       context.beginPath()
       context.strokeStyle = '#fff'
       context.lineWidth = 2
-      context.arc(point.x, point.y, markerSize * 0.62, 0, Math.PI * 2)
+      context.arc(point.x, point.y, size * 0.62, 0, Math.PI * 2)
       context.stroke()
     }
     context.restore()
@@ -309,8 +331,12 @@ function findMarker(x: number, y: number): MapMarker | null {
   for (let index = props.markers.length - 1; index >= 0; index--) {
     const marker = props.markers[index]!
     const point = markerPosition(marker)
+    const hit =
+      marker.storage === 'alphas'
+        ? Math.max(24, Math.min(36, 26 + props.camera.scale * 20))
+        : 20
     const next = Math.hypot(point.x - x, point.y - y)
-    if (next < distance) {
+    if (next < Math.min(distance, hit)) {
       nearest = marker
       distance = next
     }
@@ -323,6 +349,21 @@ function localPoint(event: PointerEvent | MouseEvent): { x: number; y: number } 
   return { x: event.clientX - rect.left, y: event.clientY - rect.top }
 }
 
+function emitCursorStatus(
+  screenX: number,
+  screenY: number,
+  marker: MapMarker | null,
+  camera = props.camera,
+): void {
+  const imageX = (screenX - camera.x) / camera.scale
+  const imageY = (screenY - camera.y) / camera.scale
+  const game = imageToGame(imageX, imageY)
+  const x = Math.round(game.x)
+  const y = Math.round(game.y)
+  const coords = `Centered on (${x}, ${y})`
+  emit('hover', marker ? `${coords} · ${marker.label}` : coords)
+}
+
 function pointerDown(event: PointerEvent): void {
   if (event.button !== 0) return
   dragging = true
@@ -333,27 +374,28 @@ function pointerDown(event: PointerEvent): void {
 }
 
 function pointerMove(event: PointerEvent): void {
+  let camera = props.camera
   if (dragging) {
     const dx = event.clientX - lastX
     const dy = event.clientY - lastY
     if (Math.abs(dx) + Math.abs(dy) > 1) moved = true
-    updateCamera({
+    camera = {
       x: props.camera.x + dx,
       y: props.camera.y + dy,
       scale: props.camera.scale,
-    })
+    }
+    updateCamera(camera)
     lastX = event.clientX
     lastY = event.clientY
     scheduleDraw()
-    return
   }
   const point = localPoint(event)
-  const marker = findMarker(point.x, point.y)
+  const marker = dragging ? null : findMarker(point.x, point.y)
   if (marker?.id !== hoverMarker?.id) {
     hoverMarker = marker
-    emit('hover', marker?.label ?? '')
-    scheduleDraw()
+    if (!dragging) scheduleDraw()
   }
+  emitCursorStatus(point.x, point.y, marker, camera)
 }
 
 function pointerUp(event: PointerEvent): void {
@@ -372,12 +414,14 @@ function wheel(event: WheelEvent): void {
   const imageX = (point.x - props.camera.x) / props.camera.scale
   const imageY = (point.y - props.camera.y) / props.camera.scale
   const scale = clampScale(props.camera.scale * Math.exp(-event.deltaY * 0.0014))
-  updateCamera({
+  const camera = {
     x: point.x - imageX * scale,
     y: point.y - imageY * scale,
     scale,
-  })
+  }
+  updateCamera(camera)
   scheduleDraw()
+  emitCursorStatus(point.x, point.y, hoverMarker, camera)
 }
 
 function contextMenu(event: MouseEvent): void {
