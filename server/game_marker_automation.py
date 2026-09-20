@@ -622,6 +622,27 @@ class GameMarkerController:
             data["monitors"][self._cache_key] = entry
             save_calibration_cache(data)
 
+    @staticmethod
+    def _should_invalidate_calibration(message: str) -> bool:
+        lower = message.lower()
+        if "cancel" in lower:
+            return False
+        if "focus" in lower:
+            return False
+        if "timed out" in lower or "timeout" in lower:
+            return False
+        return any(
+            token in lower
+            for token in (
+                "diverging",
+                "movement limit",
+                "not reached within",
+                "ocr",
+                "calibration did not move",
+                "implausible",
+            )
+        )
+
     def _load_disk_calibration(
         self,
     ) -> tuple[
@@ -997,6 +1018,8 @@ class GameMarkerController:
             self.timing.log()
         except RuntimeError as exc:
             status = "cancelled" if "cancelled" in str(exc).lower() else "error"
+            if status == "error" and self._should_invalidate_calibration(str(exc)):
+                self._invalidate_caches()
             self.update_state(active=False, status=status, error=str(exc), message=str(exc))
             self.timing.log()
         except Exception as exc:

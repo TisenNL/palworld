@@ -369,6 +369,134 @@ class GameMarkerAutomationTest(unittest.TestCase):
                         self.assertNotEqual([0.0, 1.0], entry.get("mouseX"))
                         self.assertEqual([1.0, 0.0], entry.get("mouseX"))
 
+    def test_divergence_invalidates_memory_and_disk_cache(self):
+        game_input = FakeGameInput()
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "cal.json"
+            with mock.patch.object(gma, "CALIBRATION_CACHE_PATH", cache_path):
+                with mock.patch.object(gma, "OPT_DISK_CALIBRATION", True):
+                    save_calibration_cache(
+                        {
+                            "version": gma.CALIBRATION_CACHE_VERSION,
+                            "monitors": {
+                                "div-key": {
+                                    "keys": {
+                                        "W": [0, -8],
+                                        "S": [0, 8],
+                                        "D": [8, 0],
+                                        "A": [-8, 0],
+                                    }
+                                }
+                            },
+                        }
+                    )
+                    controller = GameMarkerController(
+                        lambda _box: (
+                            round(game_input.coordinate[0]),
+                            round(game_input.coordinate[1]),
+                        ),
+                        lambda **_changes: None,
+                        game_input=game_input,
+                        timeout_seconds=2,
+                        sleep=lambda _seconds: None,
+                        cache_key="div-key",
+                    )
+                    controller._cached_key_vectors = {
+                        "W": (0.0, -8.0),
+                        "S": (0.0, 8.0),
+                        "D": (8.0, 0.0),
+                        "A": (-8.0, 0.0),
+                    }
+                    # Invert movement so each step increases error → 3 regressions.
+                    def bad_tap(keys, duration):
+                        scale = duration / 0.08
+                        vectors = {"W": (0, 8), "S": (0, -8), "D": (-8, 0), "A": (8, 0)}
+                        for key in keys:
+                            game_input.key_taps.append(key)
+                            if key in vectors:
+                                game_input.coordinate[0] += vectors[key][0] * scale
+                                game_input.coordinate[1] += vectors[key][1] * scale
+
+                    game_input.tap_keys = bad_tap  # type: ignore[method-assign]
+                    game_input.coordinate[:] = [40.0, -30.0]
+                    self.assertTrue(
+                        controller.start(
+                            (0, 0),
+                            (450, 475, 550, 525),
+                            (500, 500),
+                            False,
+                            False,
+                            None,
+                        )
+                    )
+                    controller._thread.join(2)
+                    self.assertIsNone(controller._cached_key_vectors)
+                    self.assertNotIn("div-key", load_calibration_cache()["monitors"])
+
+    def test_cancel_and_focus_lost_do_not_invalidate_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "cal.json"
+            with mock.patch.object(gma, "CALIBRATION_CACHE_PATH", cache_path):
+                with mock.patch.object(gma, "OPT_DISK_CALIBRATION", True):
+                    save_calibration_cache(
+                        {
+                            "version": gma.CALIBRATION_CACHE_VERSION,
+                            "monitors": {
+                                "keep-key": {
+                                    "keys": {
+                                        "W": [0, -8],
+                                        "S": [0, 8],
+                                        "D": [8, 0],
+                                        "A": [-8, 0],
+                                    }
+                                }
+                            },
+                        }
+                    )
+                    esc_input = FakeGameInput(escape=True)
+                    esc_controller = GameMarkerController(
+                        lambda _box: (0, 0),
+                        lambda **_changes: None,
+                        game_input=esc_input,
+                        timeout_seconds=2,
+                        sleep=lambda _seconds: None,
+                        cache_key="keep-key",
+                    )
+                    esc_controller._cached_key_vectors = {
+                        "W": (0.0, -8.0),
+                        "S": (0.0, 8.0),
+                        "D": (8.0, 0.0),
+                        "A": (-8.0, 0.0),
+                    }
+                    esc_controller.start(
+                        (40, -30), (0, 0, 1, 1), (500, 500), False, False, None
+                    )
+                    esc_controller._thread.join(2)
+                    self.assertIsNotNone(esc_controller._cached_key_vectors)
+                    self.assertIn("keep-key", load_calibration_cache()["monitors"])
+
+                    focus_input = FakeGameInput(focus=False)
+                    focus_controller = GameMarkerController(
+                        lambda _box: (0, 0),
+                        lambda **_changes: None,
+                        game_input=focus_input,
+                        timeout_seconds=2,
+                        sleep=lambda _seconds: None,
+                        cache_key="keep-key",
+                    )
+                    focus_controller._cached_key_vectors = {
+                        "W": (0.0, -8.0),
+                        "S": (0.0, 8.0),
+                        "D": (8.0, 0.0),
+                        "A": (-8.0, 0.0),
+                    }
+                    focus_controller.start(
+                        (40, -30), (0, 0, 1, 1), (500, 500), False, False, None
+                    )
+                    focus_controller._thread.join(2)
+                    self.assertIsNotNone(focus_controller._cached_key_vectors)
+                    self.assertIn("keep-key", load_calibration_cache()["monitors"])
+
     def test_adaptive_settle_returns_early_on_stable_ocr(self):
         game_input = FakeGameInput()
         values = [(1, 1), (1, 1)]
