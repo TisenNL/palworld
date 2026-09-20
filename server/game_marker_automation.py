@@ -44,7 +44,6 @@ def _env_flag(name: str, default: str = "1") -> bool:
 
 
 OPT_ADAPTIVE_SLEEP = _env_flag("PALWORLD_MARKER_ADAPTIVE_SLEEP", "1")
-OPT_ADAPTIVE_OCR_STABLE = _env_flag("PALWORLD_MARKER_ADAPTIVE_OCR", "1")
 OPT_DISK_CALIBRATION = _env_flag("PALWORLD_MARKER_DISK_CALIBRATION", "1")
 OPT_MOUSE_CACHE = _env_flag("PALWORLD_MARKER_MOUSE_CACHE", "1")
 OPT_DUAL_AXIS = _env_flag("PALWORLD_MARKER_DUAL_AXIS", "1")
@@ -451,7 +450,7 @@ class GameMarkerController:
                 maximum_delta=maximum_delta,
                 require_stable=require_stable,
             )
-        needed = 2 if require_stable or not OPT_ADAPTIVE_OCR_STABLE else 1
+        needed = 2
         attempts = max(needed + 1, int(math.ceil(max_wait / poll)))
         last: Optional[Coordinate] = None
         streak = 0
@@ -472,7 +471,7 @@ class GameMarkerController:
             started,
             previous,
             maximum_delta=maximum_delta,
-            require_stable=require_stable,
+            require_stable=True,
         )
 
     def _read(
@@ -482,7 +481,7 @@ class GameMarkerController:
         started: float,
         require_stable: bool = True,
     ) -> Coordinate:
-        needed = 2 if require_stable or not OPT_ADAPTIVE_OCR_STABLE else 1
+        needed = 2
         previous: Optional[Coordinate] = None
         consecutive = 0
         for _attempt in range(6):
@@ -796,8 +795,6 @@ class GameMarkerController:
                 self.timing.record_iteration()
                 self._check_safety(started)
                 remaining = distance_meters(current, target)
-                error_mag = math.hypot(target[0] - current[0], target[1] - current[1])
-                far = error_mag > STABLE_NEAR_FIELD
                 self.update_state(
                     status="moving",
                     current=list(current),
@@ -867,7 +864,7 @@ class GameMarkerController:
                     started,
                     previous,
                     settle_budget,
-                    require_stable=not far,
+                    require_stable=True,
                 )
                 observed = (current[0] - previous[0], current[1] - previous[1])
                 if action_keys and observed != (0, 0) and action_duration > 0:

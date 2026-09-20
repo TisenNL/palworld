@@ -241,6 +241,33 @@ class GameMarkerAutomationTest(unittest.TestCase):
         self.assertNotEqual("completed", state["status"])
         self.assertEqual(0, game_input.clicks)
 
+    def test_alternating_ocr_fails_cleanly_without_click(self):
+        game_input = FakeGameInput()
+        flip = {"n": 0}
+
+        def read(_box):
+            flip["n"] += 1
+            base = (round(game_input.coordinate[0]), round(game_input.coordinate[1]))
+            if flip["n"] % 2 == 0:
+                return base[0] + 1, base[1]
+            return base
+
+        state = self.run_controller(game_input, read, confirm=True)
+        self.assertEqual("error", state["status"])
+        self.assertIn("ocr", state["error"].lower())
+        self.assertEqual(0, game_input.clicks)
+
+    def test_stable_ocr_still_converges_after_two_equal_reads(self):
+        game_input = FakeGameInput()
+        state = self.run_controller(
+            game_input,
+            lambda _box: (round(game_input.coordinate[0]), round(game_input.coordinate[1])),
+            confirm=False,
+        )
+        self.assertEqual("completed", state["status"])
+        self.assertEqual([40, -30], state["current"])
+        self.assertEqual(0, game_input.clicks)
+
     def test_adaptive_settle_returns_early_on_stable_ocr(self):
         game_input = FakeGameInput()
         values = [(1, 1), (1, 1)]
