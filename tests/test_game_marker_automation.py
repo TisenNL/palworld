@@ -268,6 +268,107 @@ class GameMarkerAutomationTest(unittest.TestCase):
         self.assertEqual([40, -30], state["current"])
         self.assertEqual(0, game_input.clicks)
 
+    def test_mouse_cache_valid_hit_skips_recalibration(self):
+        game_input = FakeGameInput()
+        calibrate_calls = {"n": 0}
+        controller = GameMarkerController(
+            lambda _box: (round(game_input.coordinate[0]), round(game_input.coordinate[1])),
+            lambda **_changes: None,
+            game_input=game_input,
+            timeout_seconds=2,
+            sleep=lambda _seconds: None,
+            cache_key="mouse-valid",
+        )
+        controller._cached_key_vectors = {
+            "W": (0.0, -8.0),
+            "S": (0.0, 8.0),
+            "D": (8.0, 0.0),
+            "A": (-8.0, 0.0),
+        }
+        controller._cached_mouse_vectors = ((1.0, 0.0), (0.0, 1.0))
+        original = controller._calibrate_mouse
+
+        def wrapped(*args, **kwargs):
+            calibrate_calls["n"] += 1
+            return original(*args, **kwargs)
+
+        controller._calibrate_mouse = wrapped  # type: ignore[method-assign]
+        with mock.patch.object(gma, "OPT_MOUSE_CACHE", True):
+            with mock.patch.object(gma, "OPT_DISK_CALIBRATION", False):
+                self.assertTrue(
+                    controller.start(
+                        (5, 0),
+                        (450, 475, 550, 525),
+                        (500, 500),
+                        False,
+                        False,
+                        None,
+                    )
+                )
+                controller._thread.join(2)
+        self.assertEqual(0, calibrate_calls["n"])
+        self.assertIsNotNone(controller._cached_mouse_vectors)
+
+    def test_mouse_cache_invalid_hit_recalibrates_and_discards(self):
+        game_input = FakeGameInput()
+        calibrate_calls = {"n": 0}
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "cal.json"
+            with mock.patch.object(gma, "CALIBRATION_CACHE_PATH", cache_path):
+                with mock.patch.object(gma, "OPT_DISK_CALIBRATION", True):
+                    with mock.patch.object(gma, "OPT_MOUSE_CACHE", True):
+                        save_calibration_cache(
+                            {
+                                "version": gma.CALIBRATION_CACHE_VERSION,
+                                "monitors": {
+                                    "mouse-bad": {
+                                        "keys": {
+                                            "W": [0, -8],
+                                            "S": [0, 8],
+                                            "D": [8, 0],
+                                            "A": [-8, 0],
+                                        },
+                                        "mouseX": [0.0, 1.0],
+                                        "mouseY": [1.0, 0.0],
+                                    }
+                                },
+                            }
+                        )
+                        controller = GameMarkerController(
+                            lambda _box: (
+                                round(game_input.coordinate[0]),
+                                round(game_input.coordinate[1]),
+                            ),
+                            lambda **_changes: None,
+                            game_input=game_input,
+                            timeout_seconds=2,
+                            sleep=lambda _seconds: None,
+                            cache_key="mouse-bad",
+                        )
+                        original = controller._calibrate_mouse
+
+                        def wrapped(*args, **kwargs):
+                            calibrate_calls["n"] += 1
+                            return original(*args, **kwargs)
+
+                        controller._calibrate_mouse = wrapped  # type: ignore[method-assign]
+                        self.assertTrue(
+                            controller.start(
+                                (5, 0),
+                                (450, 475, 550, 525),
+                                (500, 500),
+                                False,
+                                False,
+                                None,
+                            )
+                        )
+                        controller._thread.join(2)
+                        self.assertGreaterEqual(calibrate_calls["n"], 1)
+                        entry = load_calibration_cache()["monitors"].get("mouse-bad", {})
+                        # Bad orientation must not remain; recalibrated mouse is 1:1 with FakeGameInput.
+                        self.assertNotEqual([0.0, 1.0], entry.get("mouseX"))
+                        self.assertEqual([1.0, 0.0], entry.get("mouseX"))
+
     def test_adaptive_settle_returns_early_on_stable_ocr(self):
         game_input = FakeGameInput()
         values = [(1, 1), (1, 1)]

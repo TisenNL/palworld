@@ -52,6 +52,9 @@ MARKER_TIMING = _env_flag("PALWORLD_MARKER_TIMING", "0")
 
 NEAR_FIELD = 12.0
 STABLE_NEAR_FIELD = 25.0
+MOUSE_VALIDATE_PIXELS = 24
+MOUSE_VALIDATE_ALIGNMENT = 0.35
+DUAL_AXIS_MIN_ERROR = 60.0
 
 
 def distance_meters(first: Coordinate, second: Coordinate) -> int:
@@ -577,6 +580,48 @@ class GameMarkerController:
         ) / (math.hypot(*observed) * math.hypot(*expected))
         return alignment > 0.35, moved
 
+    def _validate_cached_mouse(
+        self,
+        mouse_vectors: tuple[tuple[float, float], tuple[float, float]],
+        current: Coordinate,
+        box: Box,
+        origin: Coordinate,
+        started: float,
+    ) -> tuple[bool, Coordinate]:
+        mouse_x, _mouse_y = mouse_vectors
+        if math.hypot(*mouse_x) < 1e-6:
+            return False, current
+        anchor = self.game_input.cursor()
+        pixels = MOUSE_VALIDATE_PIXELS
+        self.game_input.move_cursor(anchor[0] + pixels, anchor[1])
+        moved = self._read_after_action(
+            box, origin, started, current, 0.16, require_stable=True
+        )
+        observed = (moved[0] - current[0], moved[1] - current[1])
+        expected = (mouse_x[0] * pixels, mouse_x[1] * pixels)
+        self.game_input.move_cursor(*anchor)
+        restored = self._read_after_action(
+            box, origin, started, moved, 0.16, require_stable=True
+        )
+        if math.hypot(*observed) < 0.5 or math.hypot(*expected) < 0.5:
+            return False, restored
+        alignment = (
+            observed[0] * expected[0] + observed[1] * expected[1]
+        ) / (math.hypot(*observed) * math.hypot(*expected))
+        return alignment >= MOUSE_VALIDATE_ALIGNMENT, restored
+
+    def _discard_mouse_cache(self) -> None:
+        self._cached_mouse_vectors = None
+        if not OPT_DISK_CALIBRATION:
+            return
+        data = load_calibration_cache()
+        entry = data["monitors"].get(self._cache_key)
+        if isinstance(entry, dict):
+            entry.pop("mouseX", None)
+            entry.pop("mouseY", None)
+            data["monitors"][self._cache_key] = entry
+            save_calibration_cache(data)
+
     def _load_disk_calibration(
         self,
     ) -> tuple[
@@ -744,7 +789,17 @@ class GameMarkerController:
                 key_vectors = dict(self._cached_key_vectors)
                 reused_calibration = True
                 if self._cached_mouse_vectors is not None and OPT_MOUSE_CACHE:
-                    mouse_vectors = self._cached_mouse_vectors
+                    ok_mouse, current = self._validate_cached_mouse(
+                        self._cached_mouse_vectors,
+                        current,
+                        selection_box,
+                        selection_point,
+                        started,
+                    )
+                    if ok_mouse:
+                        mouse_vectors = self._cached_mouse_vectors
+                    else:
+                        self._discard_mouse_cache()
                 self.update_state(message="Using validated WASD calibration")
             elif not calibration_only:
                 disk_keys, disk_mouse = self._load_disk_calibration()
@@ -755,8 +810,18 @@ class GameMarkerController:
                     if ok:
                         key_vectors = dict(disk_keys)
                         reused_calibration = True
-                        if disk_mouse is not None:
-                            mouse_vectors = disk_mouse
+                        if disk_mouse is not None and OPT_MOUSE_CACHE:
+                            ok_mouse, current = self._validate_cached_mouse(
+                                disk_mouse,
+                                current,
+                                selection_box,
+                                selection_point,
+                                started,
+                            )
+                            if ok_mouse:
+                                mouse_vectors = disk_mouse
+                            else:
+                                self._discard_mouse_cache()
                         self.update_state(message="Using disk WASD calibration")
                     else:
                         invalidate_calibration_cache(self._cache_key)
