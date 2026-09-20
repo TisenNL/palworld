@@ -78,12 +78,42 @@ def solve_mouse_delta(
     )
 
 
-def monitor_cache_key() -> str:
+def largest_monitor_bounds() -> tuple[int, int, int, int]:
+    """Largest monitor as left, top, width, height (same source as ROI helpers)."""
+    rects: list[tuple[int, int, int, int]] = []
+    enum_proc = ctypes.WINFUNCTYPE(
+        ctypes.c_bool,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+        ctypes.POINTER(wintypes.RECT),
+        ctypes.c_longlong,
+    )
+
+    def _cb(_hmon, _hdc, lprc, _data):
+        r = lprc.contents
+        w = int(r.right - r.left)
+        h = int(r.bottom - r.top)
+        if w > 0 and h > 0:
+            rects.append((int(r.left), int(r.top), w, h))
+        return True
+
     try:
-        user32 = ctypes.windll.user32
-        return f"{int(user32.GetSystemMetrics(0))}x{int(user32.GetSystemMetrics(1))}"
+        ctypes.windll.user32.EnumDisplayMonitors(0, 0, enum_proc(_cb), 0)
     except Exception:
-        return "unknown"
+        rects = []
+    if not rects:
+        try:
+            w = int(ctypes.windll.user32.GetSystemMetrics(0))
+            h = int(ctypes.windll.user32.GetSystemMetrics(1))
+            return 0, 0, w, h
+        except Exception:
+            return 0, 0, 0, 0
+    return max(rects, key=lambda m: m[2] * m[3])
+
+
+def monitor_cache_key() -> str:
+    left, top, width, height = largest_monitor_bounds()
+    return f"v{CALIBRATION_CACHE_VERSION}:{left},{top},{width}x{height}"
 
 
 class RunTiming:

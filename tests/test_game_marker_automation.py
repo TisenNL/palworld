@@ -700,6 +700,43 @@ class GameMarkerAutomationTest(unittest.TestCase):
             controller._wait_confirm_dialog((500, 700), __import__("time").monotonic())
         self.assertEqual([gma.CONFIRM_WAIT_MAX], sleeps)
 
+    def test_monitor_cache_key_includes_bounds_and_version(self):
+        with mock.patch.object(gma, "largest_monitor_bounds", return_value=(100, 200, 1920, 1080)):
+            key = gma.monitor_cache_key()
+        self.assertEqual(f"v{gma.CALIBRATION_CACHE_VERSION}:100,200,1920x1080", key)
+        with mock.patch.object(gma, "largest_monitor_bounds", return_value=(0, 0, 2560, 1440)):
+            other = gma.monitor_cache_key()
+        self.assertNotEqual(key, other)
+
+    def test_disk_cache_miss_on_different_monitor_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "cal.json"
+            with mock.patch.object(gma, "CALIBRATION_CACHE_PATH", cache_path):
+                with mock.patch.object(gma, "OPT_DISK_CALIBRATION", True):
+                    save_calibration_cache(
+                        {
+                            "version": gma.CALIBRATION_CACHE_VERSION,
+                            "monitors": {
+                                "v1:0,0,1920x1080": {
+                                    "keys": {
+                                        "W": [0, -8],
+                                        "S": [0, 8],
+                                        "D": [8, 0],
+                                        "A": [-8, 0],
+                                    }
+                                }
+                            },
+                        }
+                    )
+                    controller = GameMarkerController(
+                        lambda _box: (0, 0),
+                        lambda **_changes: None,
+                        cache_key="v1:100,0,2560x1440",
+                    )
+                    keys, mouse = controller._load_disk_calibration()
+                    self.assertIsNone(keys)
+                    self.assertIsNone(mouse)
+
 
 if __name__ == "__main__":
     unittest.main()
