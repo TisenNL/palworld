@@ -47,7 +47,7 @@ OPT_ADAPTIVE_SLEEP = _env_flag("PALWORLD_MARKER_ADAPTIVE_SLEEP", "1")
 OPT_DISK_CALIBRATION = _env_flag("PALWORLD_MARKER_DISK_CALIBRATION", "1")
 OPT_MOUSE_CACHE = _env_flag("PALWORLD_MARKER_MOUSE_CACHE", "1")
 OPT_DUAL_AXIS = _env_flag("PALWORLD_MARKER_DUAL_AXIS", "1")
-OPT_ADAPTIVE_CONFIRM = _env_flag("PALWORLD_MARKER_ADAPTIVE_CONFIRM", "1")
+OPT_ADAPTIVE_CONFIRM = _env_flag("PALWORLD_MARKER_ADAPTIVE_CONFIRM", "0")
 MARKER_TIMING = _env_flag("PALWORLD_MARKER_TIMING", "0")
 
 NEAR_FIELD = 12.0
@@ -55,6 +55,9 @@ STABLE_NEAR_FIELD = 25.0
 MOUSE_VALIDATE_PIXELS = 24
 MOUSE_VALIDATE_ALIGNMENT = 0.35
 DUAL_AXIS_MIN_ERROR = 60.0
+CONFIRM_STABLE_FRAMES = 2
+CONFIRM_WAIT_MAX = 0.5
+CONFIRM_WAIT_MIN = 0.12
 
 
 def distance_meters(first: Coordinate, second: Coordinate) -> int:
@@ -740,36 +743,43 @@ class GameMarkerController:
         return keys, min(0.22, max(durations))
 
     def _wait_confirm_dialog(self, add_button: Coordinate, started: float) -> None:
-        max_wait = 0.5
+        """Wait before clicking Add. Default: fixed 0.5s. Optional pixel settle via env flag."""
         if not OPT_ADAPTIVE_CONFIRM:
-            self.sleep(max_wait)
+            self.sleep(CONFIRM_WAIT_MAX)
             return
-        min_wait = 0.12
-        self.sleep(min_wait)
-        # Unit tests inject a no-op sleep; skip pixel polling there.
-        if self._sleep_impl is not time.sleep:
+        self.sleep(CONFIRM_WAIT_MIN)
+        if self._sleep_impl is not time.sleep and not getattr(self, "_confirm_sampler", None):
             return
-        try:
+
+        def sample() -> bytes:
+            sampler = getattr(self, "_confirm_sampler", None)
+            if sampler is not None:
+                return sampler(add_button)
             from PIL import ImageGrab
-        except ImportError:
-            self.sleep(max(0.0, max_wait - min_wait))
-            return
-        x, y = add_button
-        box = (max(0, x - 24), max(0, y - 14), x + 24, y + 14)
+
+            x, y = add_button
+            box = (max(0, x - 24), max(0, y - 14), x + 24, y + 14)
+            return ImageGrab.grab(bbox=box, all_screens=True).tobytes()
+
         try:
-            baseline = ImageGrab.grab(bbox=box, all_screens=True).tobytes()
+            baseline = sample()
         except Exception:
-            self.sleep(max(0.0, max_wait - min_wait))
+            self.sleep(max(0.0, CONFIRM_WAIT_MAX - CONFIRM_WAIT_MIN))
             return
-        attempts = max(1, int(math.ceil((max_wait - min_wait) / 0.05)))
+        attempts = max(CONFIRM_STABLE_FRAMES, int(math.ceil((CONFIRM_WAIT_MAX - CONFIRM_WAIT_MIN) / 0.05)))
+        stable = 0
         for _ in range(attempts):
             self._check_safety(started)
             try:
-                sample = ImageGrab.grab(bbox=box, all_screens=True).tobytes()
+                frame = sample()
             except Exception:
                 break
-            if sample != baseline:
-                return
+            if frame != baseline:
+                stable += 1
+                if stable >= CONFIRM_STABLE_FRAMES:
+                    return
+            else:
+                stable = 0
             self.sleep(0.05)
 
     def _run(

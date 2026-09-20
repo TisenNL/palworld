@@ -664,6 +664,42 @@ class GameMarkerAutomationTest(unittest.TestCase):
         finally:
             os.environ.pop("PALWORLD_MARKER_TIMING", None)
 
+    def test_confirm_pixel_requires_stable_change(self):
+        game_input = FakeGameInput()
+        sleeps: list[float] = []
+        frames = {"seq": [b"base", b"flicker", b"base", b"open", b"open", b"open"]}
+
+        def sampler(_button):
+            if frames["seq"]:
+                return frames["seq"].pop(0)
+            return b"open"
+
+        controller = GameMarkerController(
+            lambda _box: (0, 0),
+            lambda **_changes: None,
+            game_input=game_input,
+            sleep=lambda s: sleeps.append(s),
+            cache_key="confirm",
+        )
+        controller._confirm_sampler = sampler  # type: ignore[attr-defined]
+        with mock.patch.object(gma, "OPT_ADAPTIVE_CONFIRM", True):
+            controller._wait_confirm_dialog((500, 700), __import__("time").monotonic())
+        # min_wait + polls until 2 consecutive "open" after flicker
+        self.assertGreaterEqual(sum(sleeps), gma.CONFIRM_WAIT_MIN)
+        self.assertLess(sum(sleeps), gma.CONFIRM_WAIT_MAX)
+
+    def test_confirm_default_uses_fixed_sleep(self):
+        sleeps: list[float] = []
+        controller = GameMarkerController(
+            lambda _box: (0, 0),
+            lambda **_changes: None,
+            game_input=FakeGameInput(),
+            sleep=lambda s: sleeps.append(s),
+        )
+        with mock.patch.object(gma, "OPT_ADAPTIVE_CONFIRM", False):
+            controller._wait_confirm_dialog((500, 700), __import__("time").monotonic())
+        self.assertEqual([gma.CONFIRM_WAIT_MAX], sleeps)
+
 
 if __name__ == "__main__":
     unittest.main()
