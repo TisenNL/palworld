@@ -1,46 +1,61 @@
-# Mark in game — relatório de otimização
-#
-# Baseline vs resultado (reader simulado dos testes; sleep contabilizado;
-# OCR real do jogo não medido aqui). Alvo simulado (80, -60), cold start
-# (sem cache em disco), confirmação ligada.
-#
-# | Métrica              | Baseline (opts off) | Otimizado (opts on) | Δ        |
-# |----------------------|---------------------|---------------------|----------|
-# | status               | completed           | completed           | —        |
-# | soma sleeps (s)      | ~5.09               | ~1.0–2.0            | ≈ -60%+  |
-# | leituras OCR         | ~34                 | ~10–20              | ↓        |
-# | iterações do loop    | ~12                 | ~5–9                | ↓        |
-# | clicks Add           | 1                   | 1                   | igual    |
-#
-# Estimativa de tempo real no jogo (ordem de grandeza):
-# - Baseline: sleeps ~5.1s + OCR×34×(~80–200ms) + focus 0.25s → tipicamente 8–15s+
-# - Otimizado cold: sleeps menores + menos iters; OCR pode variar com settle
-# - Otimizado warm (cache memória/disco): calibração WASD quase eliminada (~0.5–1s)
-#
-# Instrumentação: PALWORLD_MARKER_TIMING=1
-# Flags (default=1; 0 desliga):
-#   PALWORLD_MARKER_ADAPTIVE_SLEEP
-#   PALWORLD_MARKER_ADAPTIVE_OCR
-#   PALWORLD_MARKER_DISK_CALIBRATION
-#   PALWORLD_MARKER_MOUSE_CACHE
-#   PALWORLD_MARKER_DUAL_AXIS
-#   PALWORLD_MARKER_ADAPTIVE_CONFIRM
-#
-# Aplicadas:
-# 1. Sleeps → _read_after_action / settle adaptativo (teto = sleep antigo)
-# 2. OCR estabilidade adaptativa (1 leitura longe; 2 perto/final)
-# 4. Cache WASD em .cache/game-marker-calibration.json + validação 1×W
-# 5. Cache mouse no mesmo arquivo / memória
-# 6. Dual-axis WASD no far field + duração maior se ||erro||≥150
-# 8. Confirm: min 0.12s + poll de pixels na área Add (fallback 0.5s)
-#
-# Descartadas:
-# 3. OCR mais barato / mss / dxcam — risco de precisão sem gargalo de captura medido
-# 7. Sobrepor OCR com input — complexidade vs _recognition_lock; risco de race
-#
-# Checklist manual:
-# [ ] 10 runs Mark in game (5 perto, 5 longe do alvo)
-# [ ] 1 dryRun (se exposto) ou confirmar sem Add via API dryRun=true
-# [ ] 1 cancelamento com Esc no meio do movimento
-# [ ] Reiniciar helper e 2ª run usando cache em disco (mensagem "Using disk WASD calibration")
-# [ ] Conferir Marker placed só com current==target
+# Mark in game — relatório de otimização (pós-correções de review)
+
+## Fluxo canônico (atual)
+
+1. Focus Palworld → cursor no centro → OCR inicial (**2** leituras iguais).
+2. Calibração WASD: memória → disco (validação 1×W) → calibração fresca.
+   Mouse cache: só após **validação** (nudge + alinhamento); senão recalibra.
+3. Loop: `_read_after_action` (poll OCR até 2 iguais, teto = sleep antigo).
+   Far field: dual-axis se `||erro|| >= 60`; senão 1 tecla; `max_duration` ≤ 0.22 s.
+   Near field (≤ 12): mouse + `solve_mouse_delta`.
+   Adaptação online dos vetores **somente** com 1 tecla.
+4. Gate: `current == target` estável (2×) → opcionalmente E + Add.
+5. Confirmação: default sleep **0.5 s**. Pixel settle opcional (`PALWORLD_MARKER_ADAPTIVE_CONFIRM=1`):
+   min 0.12 s + 2 frames consecutivos diferentes do baseline na ROI do Add.
+
+## Invalidação de cache
+
+Invalida memória+disco em: divergência, limite de iterações, OCR instável/ausente,
+falha de calibração WASD, jump implausível.
+
+**Não** invalida em: cancel/Esc, perda de foco, timeout global.
+
+## Flags (env; `0`/`false`/`off` desliga)
+
+| Flag | Default | Papel |
+|------|---------|--------|
+| `PALWORLD_MARKER_ADAPTIVE_SLEEP` | 1 | Esperas adaptativas / `_read_after_action` |
+| `PALWORLD_MARKER_DISK_CALIBRATION` | 1 | Cache WASD/mouse em `.cache/game-marker-calibration.json` |
+| `PALWORLD_MARKER_MOUSE_CACHE` | 1 | Reuso de mouse (com validação) |
+| `PALWORLD_MARKER_DUAL_AXIS` | 1 | Dual-axis se erro ≥ 60 |
+| `PALWORLD_MARKER_ADAPTIVE_CONFIRM` | **0** | Confirm por pixel (ligar após validar no jogo) |
+| `PALWORLD_MARKER_TIMING` | 0 | Log de fases / OCR / sleeps |
+
+Removida: `PALWORLD_MARKER_ADAPTIVE_OCR` (atalho de 1 leitura).
+
+Chave de cache: `v{version}:{left},{top},{width}x{height}` via `largest_monitor_bounds()`.
+
+## Baseline simulado (alvo 80/−60, cold, confirm on)
+
+| Métrica | Pré-otimização (opts off) | Pós-otimização (antes do review) | Pós-correções (atual) |
+|---------|---------------------------|----------------------------------|------------------------|
+| Soma sleeps | ~5.09 s | ~1.19 s | ~1.3–2.0 s* |
+| OCR reads | ~34 | ~24 | ~24–30 |
+| Loop iters | ~12 | ~9 | ~7–9 |
+| Click Add | 1 | 1 | 1 |
+
+\*Confirm default voltou a 0.5 s de sleep (flag off); calibração/loop adaptativos e dual-axis
+com limiar 60 mantêm a maior parte do ganho. Warm start (cache disco validado) remove
+quase toda a calibração WASD.
+
+Instrumentação: `PALWORLD_MARKER_TIMING=1`.
+
+## Checklist manual
+
+1. 5× Mark in game **longe** do alvo
+2. 5× Mark in game **perto**
+3. dry-run (`dryRun: true`) — sem Add
+4. Esc no meio do movimento — cancel + teclas liberadas
+5. Reiniciar helper → 2ª run com cache disco (mais rápida, ainda exata)
+6. Resolução/monitor diferente → miss de cache / recalibra
+7. `PALWORLD_MARKER_ADAPTIVE_CONFIRM=1` → validar dialog Add no jogo

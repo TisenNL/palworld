@@ -323,6 +323,8 @@ class WindowsGameInput:
         self.tap_keys([key], duration)
 
     def tap_keys(self, keys: list[str], duration: float) -> None:
+        # Uses wall-clock time.sleep so key-hold duration is real even when the
+        # GameMarkerController injects a no-op sleep for unit tests / timing.
         codes = [VK[key] for key in keys]
         for code in codes:
             self.user32.keybd_event(code, 0, 0, 0)
@@ -434,35 +436,6 @@ class GameMarkerController:
     def _ocr(self, box: Box, origin: Coordinate) -> Optional[Coordinate]:
         self.timing.record_ocr()
         return self.read_coordinate(self._translated_box(box, origin))
-
-    def _wait_settle(
-        self,
-        box: Box,
-        origin: Coordinate,
-        started: float,
-        previous: Coordinate,
-        max_wait: float,
-        poll: float = 0.05,
-    ) -> Coordinate:
-        """Adaptive wait: poll until two equal OCR reads, capped by max_wait."""
-        if not OPT_ADAPTIVE_SLEEP or max_wait <= 0:
-            self.sleep(max_wait)
-            return previous
-        attempts = max(2, int(math.ceil(max_wait / poll)))
-        last: Optional[Coordinate] = None
-        streak = 0
-        for _ in range(attempts):
-            self._check_safety(started)
-            value = self._ocr(box, origin)
-            if value is not None:
-                streak = streak + 1 if value == last else 1
-                last = value
-                if streak >= 2:
-                    return value
-            self.sleep(poll)
-        if last is not None:
-            return last
-        return previous
 
     def _read_after_action(
         self,

@@ -498,7 +498,7 @@ class GameMarkerAutomationTest(unittest.TestCase):
                     self.assertIsNotNone(focus_controller._cached_key_vectors)
                     self.assertIn("keep-key", load_calibration_cache()["monitors"])
 
-    def test_adaptive_settle_returns_early_on_stable_ocr(self):
+    def test_read_after_action_returns_early_on_stable_ocr(self):
         game_input = FakeGameInput()
         values = [(1, 1), (1, 1)]
         idx = {"i": 0}
@@ -517,11 +517,99 @@ class GameMarkerAutomationTest(unittest.TestCase):
             cache_key="settle",
         )
         with mock.patch.object(gma, "OPT_ADAPTIVE_SLEEP", True):
-            result = controller._wait_settle(
-                (0, 0, 1, 1), (0, 0), time_started := __import__("time").monotonic(), (0, 0), 0.24
+            result = controller._read_after_action(
+                (0, 0, 1, 1),
+                (0, 0),
+                __import__("time").monotonic(),
+                (0, 0),
+                0.24,
+                require_stable=True,
             )
         self.assertEqual((1, 1), result)
         self.assertLess(sum(sleeps), 0.24)
+
+    def test_cancel_during_read_after_action(self):
+        game_input = FakeGameInput()
+        controller = GameMarkerController(
+            lambda _box: (0, 0),
+            lambda **_changes: None,
+            game_input=game_input,
+            sleep=lambda _seconds: None,
+            cache_key="cancel-read",
+        )
+        started = __import__("time").monotonic()
+
+        def flaky(_box):
+            game_input.escape = True
+            return 1, 1
+
+        controller.read_coordinate = flaky
+        with self.assertRaises(RuntimeError) as ctx:
+            controller._read_after_action(
+                (0, 0, 1, 1), (0, 0), started, (0, 0), 0.5, require_stable=True
+            )
+        self.assertIn("cancel", str(ctx.exception).lower())
+
+    def test_timeout_releases_keys(self):
+        game_input = FakeGameInput()
+        controller = GameMarkerController(
+            lambda _box: (round(game_input.coordinate[0]), round(game_input.coordinate[1])),
+            lambda **_changes: None,
+            game_input=game_input,
+            timeout_seconds=0.01,
+            sleep=lambda _seconds: None,
+            cache_key="timeout",
+        )
+        controller._cached_key_vectors = {
+            "W": (0.0, -0.01),
+            "S": (0.0, 0.01),
+            "D": (0.01, 0.0),
+            "A": (-0.01, 0.0),
+        }
+        self.assertTrue(
+            controller.start((5000, 5000), (0, 0, 1, 1), (500, 500), False, False, None)
+        )
+        controller._thread.join(2)
+        self.assertTrue(game_input.released)
+
+    def test_disk_cache_corrupted_and_version_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "cal.json"
+            with mock.patch.object(gma, "CALIBRATION_CACHE_PATH", cache_path):
+                cache_path.write_text("{not-json", encoding="utf-8")
+                data = load_calibration_cache()
+                self.assertEqual({}, data["monitors"])
+                save_calibration_cache(
+                    {"version": 999, "monitors": {"x": {"keys": {"W": [0, -1]}}}}
+                )
+                # Force wrong version on disk
+                cache_path.write_text(
+                    '{"version": 999, "monitors": {"bad": {"keys": {"W": [0, -1], "A": [0, 0], "S": [0, 1], "D": [1, 0]}}}}',
+                    encoding="utf-8",
+                )
+                data = load_calibration_cache()
+                self.assertEqual(gma.CALIBRATION_CACHE_VERSION, data["version"])
+                self.assertEqual({}, data["monitors"])
+
+    def test_calibration_only_persists_disk_cache(self):
+        game_input = FakeGameInput()
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "cal.json"
+            with mock.patch.object(gma, "CALIBRATION_CACHE_PATH", cache_path):
+                with mock.patch.object(gma, "OPT_DISK_CALIBRATION", True):
+                    state = self.run_controller(
+                        game_input,
+                        lambda _box: (
+                            round(game_input.coordinate[0]),
+                            round(game_input.coordinate[1]),
+                        ),
+                        confirm=False,
+                        calibration_only=True,
+                        cache_key="cal-only",
+                    )
+                    self.assertEqual("completed", state["status"])
+                    self.assertIn("cal-only", load_calibration_cache()["monitors"])
+                    self.assertIn("keys", load_calibration_cache()["monitors"]["cal-only"])
 
     def test_disk_calibration_hit_miss_and_invalidation(self):
         with tempfile.TemporaryDirectory() as tmp:
