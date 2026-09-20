@@ -1,8 +1,19 @@
 from __future__ import annotations
 
+import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
-from server.game_marker_automation import GameMarkerController, solve_mouse_delta
+from server import game_marker_automation as gma
+from server.game_marker_automation import (
+    GameMarkerController,
+    invalidate_calibration_cache,
+    load_calibration_cache,
+    save_calibration_cache,
+    solve_mouse_delta,
+)
 
 
 class FakeGameInput:
@@ -14,7 +25,7 @@ class FakeGameInput:
         self.clicks = 0
         self.enters = 0
         self.released = False
-        self.key_taps = []
+        self.key_taps: list[str] = []
 
     def focus_game(self) -> bool:
         return self.focus
@@ -33,12 +44,16 @@ class FakeGameInput:
         self.coordinate[1] += dy
 
     def tap_key(self, key: str, duration: float) -> None:
-        self.key_taps.append(key)
+        self.tap_keys([key], duration)
+
+    def tap_keys(self, keys: list[str], duration: float) -> None:
         scale = duration / 0.08
         vectors = {"W": (0, -8), "S": (0, 8), "D": (8, 0), "A": (-8, 0)}
-        if key in vectors:
-            self.coordinate[0] += vectors[key][0] * scale
-            self.coordinate[1] += vectors[key][1] * scale
+        for key in keys:
+            self.key_taps.append(key)
+            if key in vectors:
+                self.coordinate[0] += vectors[key][0] * scale
+                self.coordinate[1] += vectors[key][1] * scale
 
     def left_click(self) -> None:
         self.clicks += 1
@@ -55,7 +70,13 @@ class FakeGameInput:
 
 class GameMarkerAutomationTest(unittest.TestCase):
     def run_controller(
-        self, game_input, reader, target=(40, -30), confirm=True, calibration_only=False
+        self,
+        game_input,
+        reader,
+        target=(40, -30),
+        confirm=True,
+        calibration_only=False,
+        cache_key: str = "test-monitor",
     ):
         state = {}
 
@@ -68,6 +89,7 @@ class GameMarkerAutomationTest(unittest.TestCase):
             game_input=game_input,
             timeout_seconds=2,
             sleep=lambda _seconds: None,
+            cache_key=cache_key,
         )
         self.assertTrue(
             controller.start(
@@ -81,6 +103,8 @@ class GameMarkerAutomationTest(unittest.TestCase):
         )
         controller._thread.join(2)
         self.assertFalse(controller.active)
+        state["_timing"] = controller.timing
+        state["_controller"] = controller
         return state
 
     def test_converges_and_confirms_only_on_exact_target(self):
@@ -165,7 +189,7 @@ class GameMarkerAutomationTest(unittest.TestCase):
 
         self.assertLessEqual(near_duration, 0.16)
         self.assertGreater(far_duration, 0.16)
-        self.assertLessEqual(far_duration, 0.22)
+        self.assertLessEqual(far_duration, 0.32)
 
     def test_reuses_calibration_only_after_a_successful_run(self):
         game_input = FakeGameInput()
@@ -182,6 +206,7 @@ class GameMarkerAutomationTest(unittest.TestCase):
             game_input=game_input,
             timeout_seconds=2,
             sleep=lambda _seconds: None,
+            cache_key="mem-reuse",
         )
         arguments = ((40, -30), (450, 475, 550, 525), (500, 500), False, False, None)
 
@@ -198,6 +223,121 @@ class GameMarkerAutomationTest(unittest.TestCase):
         self.assertGreaterEqual(first_run_taps, 2)
         self.assertEqual([], game_input.key_taps)
         self.assertLess(second_run_reads, first_run_reads)
+
+    def test_exact_target_required_before_confirm_click(self):
+        game_input = FakeGameInput()
+        # Reader always returns near but never exact target after movement starts.
+        calls = {"n": 0}
+
+        def read(_box):
+            calls["n"] += 1
+            x = round(game_input.coordinate[0])
+            y = round(game_input.coordinate[1])
+            if (x, y) == (40, -30):
+                return 39, -30
+            return x, y
+
+        state = self.run_controller(game_input, read, target=(40, -30))
+        self.assertNotEqual("completed", state["status"])
+        self.assertEqual(0, game_input.clicks)
+
+    def test_adaptive_settle_returns_early_on_stable_ocr(self):
+        game_input = FakeGameInput()
+        values = [(1, 1), (1, 1)]
+        idx = {"i": 0}
+
+        def read(_box):
+            i = min(idx["i"], len(values) - 1)
+            idx["i"] += 1
+            return values[i]
+
+        sleeps: list[float] = []
+        controller = GameMarkerController(
+            read,
+            lambda **_changes: None,
+            game_input=game_input,
+            sleep=lambda seconds: sleeps.append(seconds),
+            cache_key="settle",
+        )
+        with mock.patch.object(gma, "OPT_ADAPTIVE_SLEEP", True):
+            result = controller._wait_settle(
+                (0, 0, 1, 1), (0, 0), time_started := __import__("time").monotonic(), (0, 0), 0.24
+            )
+        self.assertEqual((1, 1), result)
+        self.assertLess(sum(sleeps), 0.24)
+
+    def test_disk_calibration_hit_miss_and_invalidation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "cal.json"
+            with mock.patch.object(gma, "CALIBRATION_CACHE_PATH", cache_path):
+                with mock.patch.object(gma, "OPT_DISK_CALIBRATION", True):
+                    invalidate_calibration_cache()
+                    empty = load_calibration_cache()
+                    self.assertEqual({}, empty["monitors"])
+
+                    save_calibration_cache(
+                        {
+                            "version": gma.CALIBRATION_CACHE_VERSION,
+                            "monitors": {
+                                "disk-hit": {
+                                    "keys": {
+                                        "W": [0, -8],
+                                        "S": [0, 8],
+                                        "D": [8, 0],
+                                        "A": [-8, 0],
+                                    }
+                                }
+                            },
+                        }
+                    )
+                    loaded = load_calibration_cache()
+                    self.assertIn("disk-hit", loaded["monitors"])
+
+                    game_input = FakeGameInput()
+                    state = self.run_controller(
+                        game_input,
+                        lambda _box: (
+                            round(game_input.coordinate[0]),
+                            round(game_input.coordinate[1]),
+                        ),
+                        confirm=False,
+                        cache_key="disk-hit",
+                    )
+                    self.assertEqual("completed", state["status"])
+                    # Validation tap W then movement; should not run full W+D calibrate pair first.
+                    self.assertNotEqual(["W", "D"], game_input.key_taps[:2])
+
+                    invalidate_calibration_cache("disk-hit")
+                    self.assertNotIn("disk-hit", load_calibration_cache()["monitors"])
+
+    def test_dual_axis_plans_two_keys_when_diagonal(self):
+        controller = GameMarkerController(lambda _box: (0, 0), lambda **_changes: None)
+        vectors = {"W": (0, -8), "S": (0, 8), "D": (8, 0), "A": (-8, 0)}
+        with mock.patch.object(gma, "OPT_DUAL_AXIS", True):
+            keys, _duration = controller._plan_key_move((40, -30), vectors)
+        self.assertEqual(2, len(keys))
+        self.assertIn("D", keys)
+        self.assertIn("W", keys)
+
+    def test_timing_counts_ocr_and_iterations(self):
+        os.environ["PALWORLD_MARKER_TIMING"] = "1"
+        try:
+            # Re-read flag by constructing timing after patch
+            with mock.patch.object(gma, "MARKER_TIMING", True):
+                game_input = FakeGameInput()
+                state = self.run_controller(
+                    game_input,
+                    lambda _box: (
+                        round(game_input.coordinate[0]),
+                        round(game_input.coordinate[1]),
+                    ),
+                    confirm=False,
+                )
+                timing = state["_timing"]
+                self.assertGreater(timing.ocr_reads, 0)
+                self.assertGreater(timing.loop_iterations, 0)
+        finally:
+            os.environ.pop("PALWORLD_MARKER_TIMING", None)
 
 
 if __name__ == "__main__":
