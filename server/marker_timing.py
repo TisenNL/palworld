@@ -24,6 +24,22 @@ def _env_flag(name: str, default: str = "1") -> bool:
 
 MARKER_TIMING = _env_flag("PALWORLD_MARKER_TIMING", "0")
 
+# Last successful OCR consensus (shared by OCR + marker controller).
+_last_ocr_meta: dict[str, float] = {"confidence": 0.0, "consensus": 0.0}
+
+
+def record_ocr_meta(confidence: float, consensus: int) -> None:
+    _last_ocr_meta["confidence"] = float(confidence)
+    _last_ocr_meta["consensus"] = float(consensus)
+
+
+def last_ocr_confidence() -> float:
+    return float(_last_ocr_meta.get("confidence") or 0.0)
+
+
+def last_ocr_consensus() -> int:
+    return int(_last_ocr_meta.get("consensus") or 0)
+
 
 def _current_timing_collector() -> Optional["TimingCollector"]:
     return getattr(_TIMING_THREAD_LOCAL, "collector", None)

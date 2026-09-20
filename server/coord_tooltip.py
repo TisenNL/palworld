@@ -28,6 +28,7 @@ from .marker_timing import (
     MARKER_TIMING,
     _current_timing_collector,
     current_ocr_context,
+    record_ocr_meta,
 )
 
 PORT = 8765
@@ -37,6 +38,11 @@ DIST_ROOT = PROJECT_ROOT / "dist"
 PROGRESS_PATH = PROJECT_ROOT / ".local" / "progress.json"
 LEGACY_PROGRESS_PATH = PROJECT_ROOT / "progress.json"
 PROGRESS_LOCK = threading.Lock()
+
+# Fast-path: skip white-mask fallback when focused crops already agree.
+OCR_EARLY_EXIT_VOTES = 2
+OCR_EARLY_EXIT_MIN_CONF = 0.85
+
 CHECK_KEYS = (
     "alphas",
     "bounties",
@@ -509,7 +515,7 @@ class OcrSelector:
             consensus_count = 0
 
             t_cap = time.perf_counter()
-            image = ImageGrab.grab(bbox=bbox, all_screens=True).convert("RGB")
+            image = grab_bbox_rgb(bbox)
             capture_ms = (time.perf_counter() - t_cap) * 1000.0
             try:
                 import numpy as np
@@ -561,10 +567,11 @@ class OcrSelector:
                 count, score = votes.get(candidate, (0, 0.0))
                 votes[candidate] = (count + 1, score + confidence)
             if votes:
-                candidate, (count, _score) = max(
+                candidate, (count, score_sum) = max(
                     votes.items(),
                     key=lambda item: (item[1][0], item[1][1]),
                 )
+                avg_conf = score_sum / max(1, count)
                 if count >= 2 and not fast:
                     copied = candidate
                     consensus_count = count
@@ -572,10 +579,22 @@ class OcrSelector:
                         if vs.get("candidate") == candidate:
                             winning_variant_idx = int(vs["idx"])
                             break
+                elif fast and (
+                    count >= 3
+                    or (count >= OCR_EARLY_EXIT_VOTES and avg_conf >= OCR_EARLY_EXIT_MIN_CONF)
+                ):
+                    # Skip white-mask fallback when focused crops already agree strongly.
+                    copied = candidate
+                    consensus_count = count
+                    for vs in variant_scores:
+                        if vs.get("candidate") == candidate:
+                            winning_variant_idx = int(vs["idx"])
+                            break
 
-            t_pre = time.perf_counter()
-            prepared_images = prepare_white_text_images(image)
-            preproc_ms += (time.perf_counter() - t_pre) * 1000.0
+            if not copied:
+                t_pre = time.perf_counter()
+                prepared_images = prepare_white_text_images(image)
+                preproc_ms += (time.perf_counter() - t_pre) * 1000.0
             debug_dir = PROJECT_ROOT / ".cache" / "ocr-debug"
             if save_debug:
                 debug_dir.mkdir(parents=True, exist_ok=True)
@@ -630,7 +649,7 @@ class OcrSelector:
                             break
                     if copied:
                         break
-            if fast and votes:
+            if fast and votes and not copied:
                 candidate, (count, _score) = max(
                     votes.items(),
                     key=lambda item: (item[1][0], item[1][1]),
@@ -658,6 +677,17 @@ class OcrSelector:
                         first_candidate and copied and first_candidate == copied
                     ),
                 )
+            if copied:
+                win_confs = [
+                    float(vs.get("confidence") or 0.0)
+                    for vs in variant_scores
+                    if vs.get("candidate") == copied
+                ]
+                avg_win = sum(win_confs) / max(1, len(win_confs)) if win_confs else 0.0
+                if votes.get(copied):
+                    count, score_sum = votes[copied]
+                    avg_win = score_sum / max(1, count)
+                record_ocr_meta(avg_win, consensus_count)
             if not copied:
                 print(f"OCR white-mask raw: {raw_attempts}", flush=True)
                 raise RuntimeError("No white coordinate text was recognized.")
@@ -686,6 +716,29 @@ class OcrSelector:
             )
         with ocr_lock:
             ocr_state.update(active=False, status="cancelled", text="", error="")
+
+
+_mss_lock = threading.Lock()
+_mss_camera = None
+
+
+def grab_bbox_rgb(bbox: Tuple[int, int, int, int]) -> Image.Image:
+    """Capture screen ROI as RGB. Prefer reused mss session; fall back to ImageGrab."""
+    global _mss_camera
+    left, top, right, bottom = (int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]))
+    width = max(1, right - left)
+    height = max(1, bottom - top)
+    with _mss_lock:
+        try:
+            import mss
+
+            if _mss_camera is None:
+                _mss_camera = mss.mss()
+            shot = _mss_camera.grab({"left": left, "top": top, "width": width, "height": height})
+            return Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
+        except Exception:
+            _mss_camera = None
+            return ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True).convert("RGB")
 
 
 def normalize_coordinate_text(text: str) -> str:

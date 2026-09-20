@@ -71,16 +71,28 @@ def _ensure_ocr() -> None:
         check=False,
         capture_output=True,
     )
-    if probe.returncode == 0:
-        return
-    print("Installing local OCR engine on first use...", flush=True)
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "rapidocr-onnxruntime"],
+    if probe.returncode != 0:
+        print("Installing local OCR engine on first use...", flush=True)
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "rapidocr-onnxruntime"],
+            cwd=ROOT,
+            check=False,
+        )
+        if result.returncode != 0:
+            print("WARNING: OCR engine could not be installed.", flush=True)
+    mss_probe = subprocess.run(
+        [sys.executable, "-c", "import mss"],
         cwd=ROOT,
         check=False,
+        capture_output=True,
     )
-    if result.returncode != 0:
-        print("WARNING: OCR engine could not be installed.", flush=True)
+    if mss_probe.returncode != 0:
+        print("Installing mss screen capture...", flush=True)
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "mss"],
+            cwd=ROOT,
+            check=False,
+        )
 
 
 def _open_browser_when_ready() -> None:

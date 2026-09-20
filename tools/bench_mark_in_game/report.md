@@ -1,10 +1,44 @@
 # Mark in game — relatório de medições
 
-Gerado por `aggregate_runs.py`. Runs JSONL encontrados: **0**.
+Gerado por `aggregate_runs.py`. Runs JSONL encontrados: **10**.
 
 ## Parte B — Runs
 
-**PENDENTE:** rode 10 Marks com `PALWORLD_MARKER_TIMING=1` (5 longe, 5 perto, 1º cold).
+| Arquivo | Dist. inicial (m) | total_ms | OCRs | iters | iters≤12 | status |
+|---------|-------------------|----------|------|-------|----------|--------|
+| `run-20260920-092732-5860.jsonl` | 760 | 5584 | 40 | 17 | 4 | completed |
+| `run-20260920-092740-5860.jsonl` | 675 | 4463 | 32 | 14 | 4 | completed |
+| `run-20260920-092746-5860.jsonl` | 772 | 4359 | 28 | 14 | 2 | completed |
+| `run-20260920-092752-5860.jsonl` | 744 | 4238 | 28 | 14 | 2 | completed |
+| `run-20260920-092759-5860.jsonl` | 776 | 5417 | 41 | 17 | 4 | completed |
+| `run-20260920-092806-5860.jsonl` | 108 | 3236 | 31 | 9 | 5 | completed |
+| `run-20260920-092811-5860.jsonl` | 29 | 1550 | 16 | 4 | 2 | completed |
+| `run-20260920-092815-5860.jsonl` | 104 | 2484 | 22 | 6 | 3 | completed |
+| `run-20260920-092820-5860.jsonl` | 55 | 2228 | 22 | 6 | 3 | completed |
+| `run-20260920-092824-5860.jsonl` | 32 | 1908 | 19 | 5 | 3 | completed |
+
+- p50 total: **3737 ms** · p95: **5509 ms** · máx: **5584 ms**
+
+### Divisão percentual (soma de todos os runs)
+
+| Componente | ms | % |
+|------------|----|---|
+| sleep | 12700 | 30.0 |
+| ocr_inference | 10024 | 23.7 |
+| hold | 9039 | 21.3 |
+| ocr_preproc | 3941 | 9.3 |
+| ocr_capture | 3600 | 8.5 |
+| focus | 3042 | 7.2 |
+| confirm | 0 | 0.0 |
+| other | 0 | 0.0 |
+
+### Top 5 consumidores
+
+1. **sleep** — 12700 ms (30.0%)
+2. **ocr_inference** — 10024 ms (23.7%)
+3. **hold** — 9039 ms (21.3%)
+4. **ocr_preproc** — 3941 ms (9.3%)
+5. **ocr_capture** — 3600 ms (8.5%)
 
 ## Parte C — Respostas
 
@@ -14,11 +48,12 @@ Gerado por `aggregate_runs.py`. Runs JSONL encontrados: **0**.
 
 ### 2. Primeira variante já correta?
 
-- perfil único: first_variant_won=True
+- 279/279 (100.0%) first_variant_won
 
 ### 3. Score de confiança RapidOCR
 
-**PENDENTE:** coletar runs reais; RapidOCR retorna `item[2]` por caixa de texto.
+- leituras com consensus≥2: 279; scores por variante estão em `variant_scores` nos JSONL.
+- limiar sem FP no conjunto: **avaliar após as 10 runs reais** (agregar scores vencedores vs perdedores).
 
 ### 4. ONNX Runtime
 
@@ -53,11 +88,11 @@ Gerado por `aggregate_runs.py`. Runs JSONL encontrados: **0**.
 
 ### 8. Near-field (‖erro‖≤12 → alvo exato)
 
-**PENDENTE:** runs TIMING.
+- soma near_field_ms=9754 · OCRs near=96
 
 ### 9. Overhead validação de cache
 
-**PENDENTE:** run quente com cache disco.
+- OCRs cache_validate=0 · ms=0
 
 ### 10. Dataset OCR bench
 

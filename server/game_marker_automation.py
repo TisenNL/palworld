@@ -48,16 +48,24 @@ OPT_DISK_CALIBRATION = _env_flag("PALWORLD_MARKER_DISK_CALIBRATION", "1")
 OPT_MOUSE_CACHE = _env_flag("PALWORLD_MARKER_MOUSE_CACHE", "1")
 OPT_DUAL_AXIS = _env_flag("PALWORLD_MARKER_DUAL_AXIS", "1")
 OPT_ADAPTIVE_CONFIRM = _env_flag("PALWORLD_MARKER_ADAPTIVE_CONFIRM", "0")
+OPT_SINGLE_OCR_FAR = _env_flag("PALWORLD_MARKER_SINGLE_OCR_FAR", "1")
+OPT_SKIP_FOCUS_IF_FOREGROUND = _env_flag("PALWORLD_MARKER_SKIP_FOCUS_IF_FOREGROUND", "1")
 MARKER_TIMING = _env_flag("PALWORLD_MARKER_TIMING", "0")
 
-NEAR_FIELD = 12.0
+NEAR_FIELD = 22.0
 STABLE_NEAR_FIELD = 25.0
 MOUSE_VALIDATE_PIXELS = 24
 MOUSE_VALIDATE_ALIGNMENT = 0.35
+MOUSE_MAX_STEP_NEAR = 30.0
+MOUSE_MAX_STEP_WIDE = 55.0
 DUAL_AXIS_MIN_ERROR = 60.0
+SINGLE_OCR_FAR_MIN_ERROR = 40.0
+SINGLE_OCR_MIN_CONF = 0.78
 CONFIRM_STABLE_FRAMES = 2
 CONFIRM_WAIT_MAX = 0.5
 CONFIRM_WAIT_MIN = 0.12
+SETTLE_AFTER_MOUSE = 0.10
+SETTLE_AFTER_KEYS = 0.18
 
 
 def distance_meters(first: Coordinate, second: Coordinate) -> int:
@@ -117,7 +125,11 @@ def monitor_cache_key() -> str:
 
 
 from .marker_timing import TimingCollector as RunTiming  # noqa: E402
-from .marker_timing import _current_timing_collector  # noqa: E402
+from .marker_timing import (  # noqa: E402
+    _current_timing_collector,
+    last_ocr_confidence,
+    last_ocr_consensus,
+)
 def load_calibration_cache() -> dict:
     try:
         if not CALIBRATION_CACHE_PATH.is_file():
@@ -240,6 +252,11 @@ class WindowsGameInput:
             if tc is not None:
                 tc.add_focus((time.perf_counter() - t0) * 1000.0, False)
             return False
+        if OPT_SKIP_FOCUS_IF_FOREGROUND and self.game_is_foreground():
+            tc = self._t_collector()
+            if tc is not None:
+                tc.add_focus((time.perf_counter() - t0) * 1000.0, True)
+            return True
         foreground = self.user32.GetForegroundWindow()
         current_thread = self.kernel32.GetCurrentThreadId()
         target_thread = self.user32.GetWindowThreadProcessId(hwnd, None)
@@ -430,6 +447,7 @@ class GameMarkerController:
         require_stable: bool = True,
         maximum_delta: float = 200.0,
         poll: float = 0.05,
+        allow_single_read: bool = False,
     ) -> Coordinate:
         """Wait for the map to settle and return the post-action coordinate."""
         self._set_ocr_reason("post_action")
@@ -456,6 +474,11 @@ class GameMarkerController:
                 streak = streak + 1 if value == last else 1
                 last = value
                 if streak >= needed:
+                    return value
+                if allow_single_read and OPT_SINGLE_OCR_FAR and (
+                    last_ocr_confidence() >= SINGLE_OCR_MIN_CONF
+                    or last_ocr_consensus() >= 3
+                ):
                     return value
             self.sleep(poll)
         return self._read_near(
@@ -948,8 +971,14 @@ class GameMarkerController:
                         continue
                     mouse_delta = solve_mouse_delta(error, *mouse_vectors)
                     if mouse_delta is not None:
-                        step_x = round(max(-30.0, min(30.0, mouse_delta[0])))
-                        step_y = round(max(-30.0, min(30.0, mouse_delta[1])))
+                        err_dist = math.hypot(*error)
+                        max_step = (
+                            MOUSE_MAX_STEP_WIDE
+                            if err_dist > 12.0
+                            else MOUSE_MAX_STEP_NEAR
+                        )
+                        step_x = round(max(-max_step, min(max_step, mouse_delta[0])))
+                        step_y = round(max(-max_step, min(max_step, mouse_delta[1])))
                         if step_x or step_y:
                             cursor = self.game_input.cursor()
                             self.game_input.move_cursor(cursor[0] + step_x, cursor[1] + step_y)
@@ -961,7 +990,13 @@ class GameMarkerController:
                     else:
                         for key in action_keys:
                             self.game_input.tap_key(key, action_duration)
-                settle_budget = 0.16 if mouse_moved else 0.18
+                settle_budget = (
+                    SETTLE_AFTER_MOUSE if mouse_moved else SETTLE_AFTER_KEYS
+                )
+                allow_single = (
+                    OPT_SINGLE_OCR_FAR
+                    and math.hypot(*error) >= SINGLE_OCR_FAR_MIN_ERROR
+                )
                 current = self._read_after_action(
                     selection_box,
                     selection_point,
@@ -969,6 +1004,7 @@ class GameMarkerController:
                     previous,
                     settle_budget,
                     require_stable=True,
+                    allow_single_read=allow_single,
                 )
                 observed = (current[0] - previous[0], current[1] - previous[1])
                 self.timing.iteration_end(
