@@ -703,9 +703,7 @@ class GameMarkerController:
             / max(0.001, vector[0] ** 2 + vector[1] ** 2),
         )
         distance = math.hypot(*error)
-        if distance >= 150 and OPT_DUAL_AXIS:
-            maximum_duration = 0.32
-        elif distance >= 100:
+        if distance >= 100:
             maximum_duration = 0.22
         else:
             maximum_duration = 0.16
@@ -716,7 +714,8 @@ class GameMarkerController:
         error: tuple[float, float],
         vectors: dict[str, tuple[float, float]],
     ) -> tuple[list[str], float]:
-        if not OPT_DUAL_AXIS:
+        distance = math.hypot(*error)
+        if not OPT_DUAL_AXIS or distance < DUAL_AXIS_MIN_ERROR:
             key, duration = self._best_key(error, vectors)
             return [key], duration
 
@@ -738,7 +737,7 @@ class GameMarkerController:
             key, duration = self._best_key(error, vectors)
             return [key], duration
         durations = [self._best_key(error, {k: vectors[k]})[1] for k in keys]
-        return keys, max(durations)
+        return keys, min(0.22, max(durations))
 
     def _wait_confirm_dialog(self, add_button: Coordinate, started: float) -> None:
         max_wait = 0.5
@@ -953,23 +952,17 @@ class GameMarkerController:
                     require_stable=True,
                 )
                 observed = (current[0] - previous[0], current[1] - previous[1])
-                if action_keys and observed != (0, 0) and action_duration > 0:
+                if (
+                    len(action_keys) == 1
+                    and action_keys
+                    and observed != (0, 0)
+                    and action_duration > 0
+                ):
                     scale = 0.06 / action_duration
-                    if len(action_keys) == 1:
-                        key_vectors[action_keys[0]] = (
-                            observed[0] * scale,
-                            observed[1] * scale,
-                        )
-                    else:
-                        for key in action_keys:
-                            expected = key_vectors[key]
-                            share = abs(
-                                observed[0] * expected[0] + observed[1] * expected[1]
-                            ) / max(0.001, math.hypot(*expected) * math.hypot(*observed))
-                            key_vectors[key] = (
-                                expected[0] * (0.7 + 0.3 * share),
-                                expected[1] * (0.7 + 0.3 * share),
-                            )
+                    key_vectors[action_keys[0]] = (
+                        observed[0] * scale,
+                        observed[1] * scale,
+                    )
                 before = math.hypot(target[0] - previous[0], target[1] - previous[1])
                 after = math.hypot(target[0] - current[0], target[1] - current[1])
                 regressions = regressions + 1 if after > before + max(3.0, before * 0.03) else 0

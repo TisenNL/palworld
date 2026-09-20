@@ -418,18 +418,19 @@ class GameMarkerAutomationTest(unittest.TestCase):
                                 game_input.coordinate[1] += vectors[key][1] * scale
 
                     game_input.tap_keys = bad_tap  # type: ignore[method-assign]
-                    game_input.coordinate[:] = [40.0, -30.0]
-                    self.assertTrue(
-                        controller.start(
-                            (0, 0),
-                            (450, 475, 550, 525),
-                            (500, 500),
-                            False,
-                            False,
-                            None,
+                    game_input.coordinate[:] = [200.0, -150.0]
+                    with mock.patch.object(gma, "OPT_DUAL_AXIS", True):
+                        self.assertTrue(
+                            controller.start(
+                                (0, 0),
+                                (450, 475, 550, 525),
+                                (500, 500),
+                                False,
+                                False,
+                                None,
+                            )
                         )
-                    )
-                    controller._thread.join(2)
+                        controller._thread.join(2)
                     self.assertIsNone(controller._cached_key_vectors)
                     self.assertNotIn("div-key", load_calibration_cache()["monitors"])
 
@@ -550,18 +551,43 @@ class GameMarkerAutomationTest(unittest.TestCase):
                     self.assertIn("disk-hit", loaded["monitors"])
 
                     game_input = FakeGameInput()
-                    state = self.run_controller(
-                        game_input,
+                    calibrate_calls = {"n": 0}
+                    state = {}
+
+                    def update(**changes):
+                        state.update(changes)
+
+                    controller = GameMarkerController(
                         lambda _box: (
                             round(game_input.coordinate[0]),
                             round(game_input.coordinate[1]),
                         ),
-                        confirm=False,
+                        update,
+                        game_input=game_input,
+                        timeout_seconds=2,
+                        sleep=lambda _seconds: None,
                         cache_key="disk-hit",
                     )
+                    original = controller._calibrate_keys
+
+                    def wrapped(*args, **kwargs):
+                        calibrate_calls["n"] += 1
+                        return original(*args, **kwargs)
+
+                    controller._calibrate_keys = wrapped  # type: ignore[method-assign]
+                    self.assertTrue(
+                        controller.start(
+                            (40, -30),
+                            (450, 475, 550, 525),
+                            (500, 500),
+                            False,
+                            False,
+                            None,
+                        )
+                    )
+                    controller._thread.join(2)
                     self.assertEqual("completed", state["status"])
-                    # Validation tap W then movement; should not run full W+D calibrate pair first.
-                    self.assertNotEqual(["W", "D"], game_input.key_taps[:2])
+                    self.assertEqual(0, calibrate_calls["n"])
 
                     invalidate_calibration_cache("disk-hit")
                     self.assertNotIn("disk-hit", load_calibration_cache()["monitors"])
@@ -570,15 +596,58 @@ class GameMarkerAutomationTest(unittest.TestCase):
         controller = GameMarkerController(lambda _box: (0, 0), lambda **_changes: None)
         vectors = {"W": (0, -8), "S": (0, 8), "D": (8, 0), "A": (-8, 0)}
         with mock.patch.object(gma, "OPT_DUAL_AXIS", True):
-            keys, _duration = controller._plan_key_move((40, -30), vectors)
+            keys, duration = controller._plan_key_move((80, -60), vectors)
         self.assertEqual(2, len(keys))
         self.assertIn("D", keys)
         self.assertIn("W", keys)
+        self.assertLessEqual(duration, 0.22)
+
+    def test_dual_axis_not_used_below_threshold(self):
+        controller = GameMarkerController(lambda _box: (0, 0), lambda **_changes: None)
+        vectors = {"W": (0, -8), "S": (0, 8), "D": (8, 0), "A": (-8, 0)}
+        with mock.patch.object(gma, "OPT_DUAL_AXIS", True):
+            keys, duration = controller._plan_key_move((40, -30), vectors)
+        self.assertEqual(1, len(keys))
+        self.assertLessEqual(duration, 0.22)
+
+    def test_vector_adaptation_only_with_single_key(self):
+        game_input = FakeGameInput()
+        controller = GameMarkerController(
+            lambda _box: (round(game_input.coordinate[0]), round(game_input.coordinate[1])),
+            lambda **_changes: None,
+            game_input=game_input,
+            timeout_seconds=2,
+            sleep=lambda _seconds: None,
+            cache_key="adapt",
+        )
+        original = {
+            "W": (0.0, -8.0),
+            "S": (0.0, 8.0),
+            "D": (8.0, 0.0),
+            "A": (-8.0, 0.0),
+        }
+        controller._cached_key_vectors = dict(original)
+        # Far diagonal forces dual-axis; vectors must stay unchanged after first steps.
+        snapshots: list[dict] = []
+        real_plan = controller._plan_key_move
+
+        def tracking_plan(error, vectors):
+            keys, duration = real_plan(error, vectors)
+            if len(keys) == 2:
+                snapshots.append({k: vectors[k] for k in ("W", "A", "S", "D")})
+            return keys, duration
+
+        controller._plan_key_move = tracking_plan  # type: ignore[method-assign]
+        with mock.patch.object(gma, "OPT_DUAL_AXIS", True):
+            controller.start((200, -150), (0, 0, 1, 1), (500, 500), False, False, None)
+            controller._thread.join(2)
+        self.assertTrue(snapshots)
+        self.assertEqual(original["W"], snapshots[0]["W"])
+        self.assertEqual(original["D"], snapshots[0]["D"])
 
     def test_timing_counts_ocr_and_iterations(self):
         os.environ["PALWORLD_MARKER_TIMING"] = "1"
         try:
-            # Re-read flag by constructing timing after patch
             with mock.patch.object(gma, "MARKER_TIMING", True):
                 game_input = FakeGameInput()
                 state = self.run_controller(
