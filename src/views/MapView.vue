@@ -50,6 +50,7 @@ const layerCounts = computed(() => {
 const nearestMarker = computed(() =>
   map.selectedMarker ? map.nearestSameType(map.selectedMarker) : null,
 )
+const searching = computed(() => map.search.trim().length > 0)
 
 function panelOpen(key: string, fallback = true): boolean {
   return preferences.values.sideBlockOpen[key] ?? fallback
@@ -252,6 +253,17 @@ function toggleSidebar(): void {
   preferences.values.sidebarCollapsed = !preferences.values.sidebarCollapsed
 }
 
+function focusSearchResult(marker: MapMarker): void {
+  preferences.values.mapLayers[marker.layerId] = true
+  map.showMarker(marker)
+  canvas.value?.centerGame(marker.item.x, marker.item.y)
+  popup.value = { visible: true, x: 24, y: 24 }
+}
+
+function toggleSearchResultDone(marker: MapMarker, done: boolean): void {
+  checklist.setDone(marker.storage, marker.item.id, done)
+}
+
 map.restoreCamera()
 void server.pollGameMarker()
 void server.pollMouseLoop()
@@ -267,46 +279,80 @@ void server.pollMouseLoop()
           :open="panelOpen('map-categories')"
           @update:open="setPanelOpen('map-categories', $event)"
         >
-          <InputText v-model="map.search" fluid placeholder="Search the map…" />
-          <div class="quick-actions">
-            <Button label="All" size="small" text @click="setAll(true)" />
-            <Button label="Hide" size="small" text severity="secondary" @click="setAll(false)" />
-          </div>
-          <div class="category-accordions">
-            <details
-              v-for="group in layerGroups"
-              :key="group.id"
-              class="category-section"
-              :open="browseGroup === group.id"
-              @toggle="toggleGroup(group.id, $event)"
-            >
-              <summary>{{ group.label }}</summary>
-              <div class="layer-browser">
-                <label
-                  v-for="layer in layersForGroup(group.id)"
-                  :key="layer.id"
-                  class="layer-check"
+          <InputText v-model="map.search" fluid placeholder="Procurar no mapa" />
+          <template v-if="searching">
+            <p class="search-meta">
+              {{ map.searchResults.length.toLocaleString('pt-BR') }} resultado(s)
+            </p>
+            <div class="search-results">
+              <label
+                v-for="marker in map.searchResults"
+                :key="marker.id"
+                class="search-result"
+                :class="{ active: map.selectedMarker?.id === marker.id, done: marker.done }"
+              >
+                <Checkbox
+                  :model-value="checklist.isDone(marker.storage, marker.item.id)"
+                  binary
+                  @update:model-value="toggleSearchResultDone(marker, Boolean($event))"
+                  @click.stop
+                />
+                <button
+                  type="button"
+                  class="search-result-main"
+                  @click="focusSearchResult(marker)"
                 >
-                  <Checkbox
-                    :model-value="preferences.values.mapLayers[layer.id]"
-                    binary
-                    @update:model-value="preferences.values.mapLayers[layer.id] = Boolean($event)"
-                  />
-                  <span class="layer-swatch" :style="{ background: layer.color }" />
-                  <SafeImage
-                    v-if="layer.iconUrl"
-                    class="layer-image"
-                    :src="layer.iconUrl"
-                    :fallback-label="layer.label"
-                  />
-                  <span class="layer-label">{{ layer.label }}</span>
-                  <span v-if="layer.label.endsWith(' Cluster')" class="layer-count">
-                    {{ layerCounts.get(layer.id) ?? 0 }}
+                  <span class="layer-swatch" :style="{ background: marker.color }" />
+                  <span class="search-result-text">
+                    <span class="search-result-label">{{ marker.label }}</span>
+                    <small>{{ marker.item.x }}, {{ marker.item.y }}</small>
                   </span>
-                </label>
-              </div>
-            </details>
-          </div>
+                </button>
+              </label>
+              <p v-if="!map.searchResults.length" class="search-empty">Nenhum resultado.</p>
+            </div>
+          </template>
+          <template v-else>
+            <div class="quick-actions">
+              <Button label="All" size="small" text @click="setAll(true)" />
+              <Button label="Hide" size="small" text severity="secondary" @click="setAll(false)" />
+            </div>
+            <div class="category-accordions">
+              <details
+                v-for="group in layerGroups"
+                :key="group.id"
+                class="category-section"
+                :open="browseGroup === group.id"
+                @toggle="toggleGroup(group.id, $event)"
+              >
+                <summary>{{ group.label }}</summary>
+                <div class="layer-browser">
+                  <label
+                    v-for="layer in layersForGroup(group.id)"
+                    :key="layer.id"
+                    class="layer-check"
+                  >
+                    <Checkbox
+                      :model-value="preferences.values.mapLayers[layer.id]"
+                      binary
+                      @update:model-value="preferences.values.mapLayers[layer.id] = Boolean($event)"
+                    />
+                    <span class="layer-swatch" :style="{ background: layer.color }" />
+                    <SafeImage
+                      v-if="layer.iconUrl"
+                      class="layer-image"
+                      :src="layer.iconUrl"
+                      :fallback-label="layer.label"
+                    />
+                    <span class="layer-label">{{ layer.label }}</span>
+                    <span v-if="layer.label.endsWith(' Cluster')" class="layer-count">
+                      {{ layerCounts.get(layer.id) ?? 0 }}
+                    </span>
+                  </label>
+                </div>
+              </details>
+            </div>
+          </template>
         </CompactPanel>
 
         <CompactPanel
@@ -602,6 +648,78 @@ void server.pollMouseLoop()
 
 .layer-label {
   min-width: 0;
+}
+
+.search-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.search-results {
+  display: grid;
+  gap: 4px;
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.search-result {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: default;
+}
+
+.search-result.active {
+  outline: 1px solid rgba(120, 180, 255, 0.45);
+  background: rgba(80, 140, 220, 0.12);
+}
+
+.search-result.done {
+  opacity: 0.62;
+}
+
+.search-result-main {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.search-result-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.search-result-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+}
+
+.search-result-text small {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.search-empty {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .layer-count {

@@ -51,16 +51,11 @@ export const useMapStore = defineStore('map', () => {
 
   const markers = computed<MapMarker[]>(() => {
     if (!checklist.data) return []
-    const query = search.value.trim().toLocaleLowerCase()
     const output: MapMarker[] = []
     for (const layer of checklist.layers) {
       if (!preferences.values.mapLayers[layer.id]) continue
       for (const item of layerItems(checklist.data, layer)) {
-        const marker = markerFor(layer, item)
-        if (query && !`${marker.label} ${item.x} ${item.y}`.toLocaleLowerCase().includes(query)) {
-          continue
-        }
-        output.push(marker)
+        output.push(markerFor(layer, item))
       }
     }
     const priority = (marker: MapMarker): number => {
@@ -74,6 +69,22 @@ export const useMapStore = defineStore('map', () => {
       if (byPriority !== 0) return byPriority
       return Number(a.done) - Number(b.done)
     })
+  })
+
+  const searchResults = computed<MapMarker[]>(() => {
+    if (!checklist.data) return []
+    const query = search.value.trim().toLocaleLowerCase()
+    if (!query) return []
+    const output: MapMarker[] = []
+    for (const layer of checklist.layers) {
+      for (const item of layerItems(checklist.data, layer)) {
+        const marker = markerFor(layer, item)
+        const haystack = `${marker.label} ${item.name ?? ''} ${item.type ?? ''} ${item.x} ${item.y}`
+        if (!haystack.toLocaleLowerCase().includes(query)) continue
+        output.push(marker)
+      }
+    }
+    return output.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
   })
 
   function nearestSameType(
@@ -128,6 +139,7 @@ export const useMapStore = defineStore('map', () => {
     hoverText,
     camera,
     markers,
+    searchResults,
     restoreCamera,
     saveCamera,
     showMarker,
