@@ -42,6 +42,8 @@ PROGRESS_LOCK = threading.Lock()
 # Fast-path: skip white-mask fallback when focused crops already agree.
 OCR_EARLY_EXIT_VOTES = 2
 OCR_EARLY_EXIT_MIN_CONF = 0.85
+OCR_FAST_MAX_VARIANTS = 5
+OCR_FAST_CROP_ORDER = (7, 6, 8, 5, 9, 2, 12)  # center-first in 5x3 grid
 
 CHECK_KEYS = (
     "alphas",
@@ -534,9 +536,15 @@ class OcrSelector:
             votes: Dict[str, Tuple[int, float]] = {}
 
             t_pre = time.perf_counter()
-            focused_images = prepare_focused_coordinate_images(image)
+            all_focused = prepare_focused_coordinate_images(image)
             if fast:
-                focused_images = focused_images[5:10]
+                focused_images = [
+                    all_focused[i]
+                    for i in OCR_FAST_CROP_ORDER
+                    if 0 <= i < len(all_focused)
+                ][:OCR_FAST_MAX_VARIANTS]
+            else:
+                focused_images = all_focused
             preproc_ms += (time.perf_counter() - t_pre) * 1000.0
 
             for focused in focused_images:
@@ -566,7 +574,26 @@ class OcrSelector:
                     first_candidate = candidate
                 count, score = votes.get(candidate, (0, 0.0))
                 votes[candidate] = (count + 1, score + confidence)
-            if votes:
+                avg_conf = (score + confidence) / max(1, count + 1)
+                # Early exit inside the loop (was after all variants — wasted work).
+                if not fast and count + 1 >= 2:
+                    copied = candidate
+                    consensus_count = count + 1
+                    winning_variant_idx = variants_count - 1
+                    break
+                if fast and (
+                    count + 1 >= 3
+                    or (
+                        count + 1 >= OCR_EARLY_EXIT_VOTES
+                        and avg_conf >= max(OCR_EARLY_EXIT_MIN_CONF, 0.90)
+                    )
+                ):
+                    copied = candidate
+                    consensus_count = count + 1
+                    winning_variant_idx = variants_count - 1
+                    break
+
+            if not copied and votes:
                 candidate, (count, score_sum) = max(
                     votes.items(),
                     key=lambda item: (item[1][0], item[1][1]),
@@ -583,7 +610,6 @@ class OcrSelector:
                     count >= 3
                     or (count >= OCR_EARLY_EXIT_VOTES and avg_conf >= OCR_EARLY_EXIT_MIN_CONF)
                 ):
-                    # Skip white-mask fallback when focused crops already agree strongly.
                     copied = candidate
                     consensus_count = count
                     for vs in variant_scores:

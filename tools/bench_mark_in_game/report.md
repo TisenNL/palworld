@@ -6,39 +6,39 @@ Gerado por `aggregate_runs.py`. Runs JSONL encontrados: **10**.
 
 | Arquivo | Dist. inicial (m) | total_ms | OCRs | iters | iters≤12 | status |
 |---------|-------------------|----------|------|-------|----------|--------|
-| `run-20260920-092732-5860.jsonl` | 760 | 5584 | 40 | 17 | 4 | completed |
-| `run-20260920-092740-5860.jsonl` | 675 | 4463 | 32 | 14 | 4 | completed |
-| `run-20260920-092746-5860.jsonl` | 772 | 4359 | 28 | 14 | 2 | completed |
-| `run-20260920-092752-5860.jsonl` | 744 | 4238 | 28 | 14 | 2 | completed |
-| `run-20260920-092759-5860.jsonl` | 776 | 5417 | 41 | 17 | 4 | completed |
-| `run-20260920-092806-5860.jsonl` | 108 | 3236 | 31 | 9 | 5 | completed |
-| `run-20260920-092811-5860.jsonl` | 29 | 1550 | 16 | 4 | 2 | completed |
-| `run-20260920-092815-5860.jsonl` | 104 | 2484 | 22 | 6 | 3 | completed |
-| `run-20260920-092820-5860.jsonl` | 55 | 2228 | 22 | 6 | 3 | completed |
-| `run-20260920-092824-5860.jsonl` | 32 | 1908 | 19 | 5 | 3 | completed |
+| `run-20260920-094749-19432.jsonl` | 780 | 5437 | 38 | 13 | 8 | completed |
+| `run-20260920-094756-19432.jsonl` | 780 | 4326 | 32 | 12 | 8 | completed |
+| `run-20260920-094802-19432.jsonl` | 732 | 4644 | 40 | 17 | 8 | completed |
+| `run-20260920-094808-19432.jsonl` | 694 | 2820 | 19 | 8 | 4 | completed |
+| `run-20260920-094812-19432.jsonl` | 756 | 4044 | 27 | 13 | 4 | completed |
+| `run-20260920-094818-19432.jsonl` | 168 | 3690 | 43 | 16 | 12 | completed |
+| `run-20260920-094823-19432.jsonl` | 54 | 1632 | 20 | 8 | 4 | completed |
+| `run-20260920-094827-19432.jsonl` | 134 | 2730 | 31 | 11 | 5 | completed |
+| `run-20260920-094831-19432.jsonl` | 18 | 1269 | 15 | 6 | 4 | completed |
+| `run-20260920-094834-19432.jsonl` | 66 | 1328 | 16 | 6 | 3 | completed |
 
-- p50 total: **3737 ms** · p95: **5509 ms** · máx: **5584 ms**
+- p50 total: **3255 ms** · p95: **5080 ms** · máx: **5437 ms**
 
 ### Divisão percentual (soma de todos os runs)
 
 | Componente | ms | % |
 |------------|----|---|
-| sleep | 12700 | 30.0 |
-| ocr_inference | 10024 | 23.7 |
-| hold | 9039 | 21.3 |
-| ocr_preproc | 3941 | 9.3 |
-| ocr_capture | 3600 | 8.5 |
-| focus | 3042 | 7.2 |
+| sleep | 11500 | 32.7 |
+| hold | 8929 | 25.4 |
+| ocr_inference | 6310 | 17.9 |
+| ocr_preproc | 3897 | 11.1 |
+| ocr_capture | 3314 | 9.4 |
+| focus | 1244 | 3.5 |
 | confirm | 0 | 0.0 |
 | other | 0 | 0.0 |
 
 ### Top 5 consumidores
 
-1. **sleep** — 12700 ms (30.0%)
-2. **ocr_inference** — 10024 ms (23.7%)
-3. **hold** — 9039 ms (21.3%)
-4. **ocr_preproc** — 3941 ms (9.3%)
-5. **ocr_capture** — 3600 ms (8.5%)
+1. **sleep** — 11500 ms (32.7%)
+2. **hold** — 8929 ms (25.4%)
+3. **ocr_inference** — 6310 ms (17.9%)
+4. **ocr_preproc** — 3897 ms (11.1%)
+5. **ocr_capture** — 3314 ms (9.4%)
 
 ## Parte C — Respostas
 
@@ -48,11 +48,11 @@ Gerado por `aggregate_runs.py`. Runs JSONL encontrados: **10**.
 
 ### 2. Primeira variante já correta?
 
-- 279/279 (100.0%) first_variant_won
+- 281/281 (100.0%) first_variant_won
 
 ### 3. Score de confiança RapidOCR
 
-- leituras com consensus≥2: 279; scores por variante estão em `variant_scores` nos JSONL.
+- leituras com consensus≥2: 281; scores por variante estão em `variant_scores` nos JSONL.
 - limiar sem FP no conjunto: **avaliar após as 10 runs reais** (agregar scores vencedores vs perdedores).
 
 ### 4. ONNX Runtime
@@ -88,7 +88,7 @@ Gerado por `aggregate_runs.py`. Runs JSONL encontrados: **10**.
 
 ### 8. Near-field (‖erro‖≤12 → alvo exato)
 
-- soma near_field_ms=9754 · OCRs near=96
+- soma near_field_ms=14364 · OCRs near=171
 
 ### 9. Overhead validação de cache
 
