@@ -24,6 +24,11 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from PIL import Image, ImageFilter, ImageGrab, ImageOps
 from .game_marker_automation import GameMarkerController, MouseComboLoop, WindowsGameInput
+from .marker_timing import (
+    MARKER_TIMING,
+    _current_timing_collector,
+    current_ocr_context,
+)
 
 PORT = 8765
 VERSION = "tooltip-v20-game-marker"
@@ -91,8 +96,16 @@ mouse_loop_controller: Optional[MouseComboLoop] = None
 
 
 def update_game_marker_state(**changes) -> None:
-    with game_marker_lock:
+    collector = _current_timing_collector()
+    t0 = time.perf_counter()
+    game_marker_lock.acquire()
+    wait_ms = (time.perf_counter() - t0) * 1000.0
+    try:
+        if collector is not None and wait_ms >= 0.05:
+            collector.add_lock("game_marker_lock", wait_ms)
         game_marker_state.update(changes)
+    finally:
+        game_marker_lock.release()
 
 
 def update_mouse_loop_state(**changes) -> None:
@@ -478,8 +491,26 @@ class OcrSelector:
         save_debug: bool = False,
         fast: bool = False,
     ) -> str:
-        with self._recognition_lock:
+        collector, ocr_reason = current_ocr_context()
+        lock_t0 = time.perf_counter()
+        self._recognition_lock.acquire()
+        lock_wait_ms = (time.perf_counter() - lock_t0) * 1000.0
+        try:
+            if collector is not None and lock_wait_ms >= 0.05:
+                collector.add_lock("_recognition_lock", lock_wait_ms)
+
+            capture_ms = 0.0
+            preproc_ms = 0.0
+            inference_ms = 0.0
+            variants_count = 0
+            variant_scores: List[dict] = []
+            winning_variant_idx = -1
+            first_candidate = ""
+            consensus_count = 0
+
+            t_cap = time.perf_counter()
             image = ImageGrab.grab(bbox=bbox, all_screens=True).convert("RGB")
+            capture_ms = (time.perf_counter() - t_cap) * 1000.0
             try:
                 import numpy as np
                 from rapidocr_onnxruntime import RapidOCR
@@ -495,18 +526,38 @@ class OcrSelector:
             copied = ""
             raw_attempts: List[str] = []
             votes: Dict[str, Tuple[int, float]] = {}
+
+            t_pre = time.perf_counter()
             focused_images = prepare_focused_coordinate_images(image)
             if fast:
                 focused_images = focused_images[5:10]
+            preproc_ms += (time.perf_counter() - t_pre) * 1000.0
+
             for focused in focused_images:
+                t_inf = time.perf_counter()
                 result, _elapsed = self._ocr_direct_engine(np.asarray(focused))
+                inference_ms += (time.perf_counter() - t_inf) * 1000.0
+                variants_count += 1
                 parts = [str(item[1]).strip() for item in (result or []) if len(item) > 1]
                 raw_text = " ".join(part for part in parts if part).strip()
                 raw_attempts.append(raw_text)
                 candidate = normalize_coordinate_text(raw_text)
+                confidence = 0.0
+                if result:
+                    confidence = sum(float(item[2]) for item in result if len(item) > 2) / max(
+                        1, len(result)
+                    )
+                variant_scores.append({
+                    "idx": variants_count - 1,
+                    "stage": "focused",
+                    "raw": raw_text,
+                    "candidate": candidate,
+                    "confidence": round(confidence, 4),
+                })
                 if not candidate:
                     continue
-                confidence = sum(float(item[2]) for item in result or []) / max(1, len(result or []))
+                if not first_candidate:
+                    first_candidate = candidate
                 count, score = votes.get(candidate, (0, 0.0))
                 votes[candidate] = (count + 1, score + confidence)
             if votes:
@@ -516,8 +567,15 @@ class OcrSelector:
                 )
                 if count >= 2 and not fast:
                     copied = candidate
+                    consensus_count = count
+                    for vs in variant_scores:
+                        if vs.get("candidate") == candidate:
+                            winning_variant_idx = int(vs["idx"])
+                            break
 
+            t_pre = time.perf_counter()
             prepared_images = prepare_white_text_images(image)
+            preproc_ms += (time.perf_counter() - t_pre) * 1000.0
             debug_dir = PROJECT_ROOT / ".cache" / "ocr-debug"
             if save_debug:
                 debug_dir.mkdir(parents=True, exist_ok=True)
@@ -539,19 +597,36 @@ class OcrSelector:
                                 "unclip_ratio": 1.8,
                             }))
                     for engine, kwargs in engines:
+                        t_inf = time.perf_counter()
                         result, _elapsed = engine(np.asarray(prepared), **kwargs)
+                        inference_ms += (time.perf_counter() - t_inf) * 1000.0
+                        variants_count += 1
                         parts = [str(item[1]).strip() for item in (result or []) if len(item) > 1]
                         raw_text = " ".join(part for part in parts if part).strip()
                         raw_attempts.append(raw_text)
                         candidate = normalize_coordinate_text(raw_text)
+                        confidence = 0.0
+                        if result:
+                            confidence = sum(
+                                float(item[2]) for item in result if len(item) > 2
+                            ) / max(1, len(result))
+                        variant_scores.append({
+                            "idx": variants_count - 1,
+                            "stage": "white_mask",
+                            "mask_index": index,
+                            "raw": raw_text,
+                            "candidate": candidate,
+                            "confidence": round(confidence, 4),
+                        })
                         if fast and candidate:
-                            confidence = sum(float(item[2]) for item in result or []) / max(
-                                1, len(result or [])
-                            )
+                            if not first_candidate:
+                                first_candidate = candidate
                             count, score = votes.get(candidate, (0, 0.0))
                             votes[candidate] = (count + 1, score + confidence)
                         elif candidate:
                             copied = candidate
+                            winning_variant_idx = variants_count - 1
+                            consensus_count = 1
                             break
                     if copied:
                         break
@@ -562,10 +637,33 @@ class OcrSelector:
                 )
                 if count >= 2:
                     copied = candidate
+                    consensus_count = count
+                    for vs in variant_scores:
+                        if vs.get("candidate") == candidate:
+                            winning_variant_idx = int(vs["idx"])
+                            break
+            if collector is not None:
+                collector.add_ocr_event(
+                    reason=ocr_reason,
+                    capture_ms=capture_ms,
+                    preproc_ms=preproc_ms,
+                    inference_ms=inference_ms,
+                    variants_count=variants_count,
+                    winning_variant_idx=winning_variant_idx,
+                    result=copied or None,
+                    consensus_count=consensus_count,
+                    all_scores=[vs.get("confidence") for vs in variant_scores],
+                    variant_scores=variant_scores,
+                    first_variant_won=bool(
+                        first_candidate and copied and first_candidate == copied
+                    ),
+                )
             if not copied:
                 print(f"OCR white-mask raw: {raw_attempts}", flush=True)
                 raise RuntimeError("No white coordinate text was recognized.")
             return copied
+        finally:
+            self._recognition_lock.release()
 
     def _copy_result(self, value: str) -> None:
         self.root.clipboard_clear()
@@ -879,8 +977,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/game-marker/state":
+            t0 = time.perf_counter()
             with game_marker_lock:
                 snap = dict(game_marker_state)
+            collector = _current_timing_collector()
+            if collector is None and MARKER_TIMING and game_marker_controller is not None:
+                collector = getattr(game_marker_controller, "timing", None)
+            if collector is not None and getattr(collector, "enabled", False):
+                collector.add_http_poll((time.perf_counter() - t0) * 1000.0)
             self._json(200, {"ok": True, **snap})
             return
 

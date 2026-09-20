@@ -116,59 +116,8 @@ def monitor_cache_key() -> str:
     return f"v{CALIBRATION_CACHE_VERSION}:{left},{top},{width}x{height}"
 
 
-class RunTiming:
-    """Optional per-run timing; enabled via PALWORLD_MARKER_TIMING=1."""
-
-    def __init__(self) -> None:
-        self.enabled = MARKER_TIMING
-        self.phase_ms: dict[str, float] = {}
-        self.sleep_ms: dict[str, float] = {}
-        self.ocr_reads = 0
-        self.loop_iterations = 0
-        self._phase_started: dict[str, float] = {}
-        self._sleep_phase = "other"
-
-    def begin_phase(self, name: str) -> None:
-        if not self.enabled:
-            return
-        self._phase_started[name] = time.perf_counter()
-        self._sleep_phase = name
-
-    def end_phase(self, name: str) -> None:
-        if not self.enabled:
-            return
-        started = self._phase_started.pop(name, None)
-        if started is None:
-            return
-        self.phase_ms[name] = self.phase_ms.get(name, 0.0) + (time.perf_counter() - started) * 1000.0
-        self._sleep_phase = "other"
-
-    def add_sleep(self, seconds: float) -> None:
-        if not self.enabled:
-            return
-        phase = self._sleep_phase
-        self.sleep_ms[phase] = self.sleep_ms.get(phase, 0.0) + seconds * 1000.0
-
-    def record_ocr(self) -> None:
-        if self.enabled:
-            self.ocr_reads += 1
-
-    def record_iteration(self) -> None:
-        if self.enabled:
-            self.loop_iterations += 1
-
-    def log(self, prefix: str = "marker-timing") -> None:
-        if not self.enabled:
-            return
-        total = sum(self.phase_ms.values())
-        print(
-            f"[{prefix}] phases_ms={{{', '.join(f'{k}={v:.1f}' for k, v in sorted(self.phase_ms.items()))}}}"
-            f" sleep_ms={{{', '.join(f'{k}={v:.1f}' for k, v in sorted(self.sleep_ms.items()))}}}"
-            f" ocr_reads={self.ocr_reads} loop_iters={self.loop_iterations} total_phase_ms={total:.1f}",
-            flush=True,
-        )
-
-
+from .marker_timing import TimingCollector as RunTiming  # noqa: E402
+from .marker_timing import _current_timing_collector  # noqa: E402
 def load_calibration_cache() -> dict:
     try:
         if not CALIBRATION_CACHE_PATH.is_file():
@@ -236,6 +185,12 @@ class WindowsGameInput:
         self.kernel32.OpenProcess.restype = wintypes.HANDLE
         self.user32.GetForegroundWindow.restype = wintypes.HWND
         self.user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+        self.timing = None
+
+    def _t_collector(self):
+        if self.timing is not None and getattr(self.timing, "enabled", False):
+            return self.timing
+        return _current_timing_collector()
 
     def _window_title(self, hwnd: int) -> str:
         length = self.user32.GetWindowTextLengthW(hwnd)
@@ -278,8 +233,12 @@ class WindowsGameInput:
         return handles[0] if handles else 0
 
     def focus_game(self) -> bool:
+        t0 = time.perf_counter()
         hwnd = self.find_window()
         if not hwnd:
+            tc = self._t_collector()
+            if tc is not None:
+                tc.add_focus((time.perf_counter() - t0) * 1000.0, False)
             return False
         foreground = self.user32.GetForegroundWindow()
         current_thread = self.kernel32.GetCurrentThreadId()
@@ -305,7 +264,11 @@ class WindowsGameInput:
             self.user32.SetForegroundWindow(hwnd)
             self.user32.keybd_event(0x12, 0, KEY_UP, 0)
         time.sleep(0.25)
-        return self.game_is_foreground()
+        ok = self.game_is_foreground()
+        tc = self._t_collector()
+        if tc is not None:
+            tc.add_focus((time.perf_counter() - t0) * 1000.0, ok)
+        return ok
 
     def game_is_foreground(self) -> bool:
         hwnd = self.user32.GetForegroundWindow()
@@ -317,7 +280,11 @@ class WindowsGameInput:
         return int(point.x), int(point.y)
 
     def move_cursor(self, x: int, y: int) -> None:
+        t0 = time.perf_counter()
         self.user32.SetCursorPos(int(x), int(y))
+        tc = self._t_collector()
+        if tc is not None:
+            tc.add_win32("SetCursorPos", cursor=[int(x), int(y)], call_ms=round((time.perf_counter() - t0) * 1000, 4))
 
     def tap_key(self, key: str, duration: float) -> None:
         self.tap_keys([key], duration)
@@ -333,6 +300,9 @@ class WindowsGameInput:
         finally:
             for code in codes:
                 self.user32.keybd_event(code, 0, KEY_UP, 0)
+        tc = self._t_collector()
+        if tc is not None:
+            tc.add_win32("keybd_event", keys=list(keys), hold_ms=round(duration * 1000.0, 3))
 
     def left_click(self) -> None:
         self.user32.mouse_event(LEFT_DOWN, 0, 0, 0, 0)
@@ -381,7 +351,7 @@ class GameMarkerController:
         self._cached_mouse_vectors: Optional[
             tuple[tuple[float, float], tuple[float, float]]
         ] = None
-        self.timing = RunTiming()
+        self.timing = RunTiming(enabled=MARKER_TIMING)
 
     def sleep(self, seconds: float) -> None:
         self.timing.add_sleep(seconds)
@@ -403,7 +373,8 @@ class GameMarkerController:
         if self.active:
             return False
         self._cancel.clear()
-        self.timing = RunTiming()
+        self.timing = RunTiming(enabled=MARKER_TIMING)
+        self.game_input.timing = self.timing if self.timing.enabled else None
         self._thread = threading.Thread(
             target=self._run,
             args=(
@@ -433,9 +404,21 @@ class GameMarkerController:
     def _translated_box(self, box: Box, origin: Coordinate) -> Box:
         return box
 
+    def _set_ocr_reason(self, reason: str) -> None:
+        self.timing.set_ocr_reason(reason)
+
     def _ocr(self, box: Box, origin: Coordinate) -> Optional[Coordinate]:
         self.timing.record_ocr()
-        return self.read_coordinate(self._translated_box(box, origin))
+        self.timing._last_ocr_total_ms = 0.0
+        t0 = time.perf_counter()
+        result = self.read_coordinate(self._translated_box(box, origin))
+        if self.timing.enabled and self.timing._iteration_ctx is not None:
+            spent = self.timing._last_ocr_total_ms
+            if spent <= 0:
+                spent = (time.perf_counter() - t0) * 1000.0
+            self.timing.iteration_add_ocr(spent)
+            self.timing._last_ocr_total_ms = 0.0
+        return result
 
     def _read_after_action(
         self,
@@ -449,6 +432,7 @@ class GameMarkerController:
         poll: float = 0.05,
     ) -> Coordinate:
         """Wait for the map to settle and return the post-action coordinate."""
+        self._set_ocr_reason("post_action")
         if not OPT_ADAPTIVE_SLEEP:
             self.sleep(max_wait)
             return self._read_near(
@@ -526,6 +510,8 @@ class GameMarkerController:
         origin: Coordinate,
         started: float,
     ) -> tuple[tuple[float, float], tuple[float, float], Coordinate]:
+        self.timing.begin_phase("calibration_mouse")
+        self._set_ocr_reason("calibration_mouse")
         anchor = self.game_input.cursor()
         vectors: list[tuple[float, float]] = []
         latest = current
@@ -539,6 +525,7 @@ class GameMarkerController:
             latest = self._read_after_action(
                 box, origin, started, moved, 0.16, require_stable=True
             )
+        self.timing.end_phase("calibration_mouse")
         return vectors[0], vectors[1], latest
 
     def _calibrate_keys(
@@ -548,6 +535,7 @@ class GameMarkerController:
         origin: Coordinate,
         started: float,
     ) -> tuple[dict[str, tuple[float, float]], Coordinate]:
+        self._set_ocr_reason("calibration_wasd")
         vectors: dict[str, tuple[float, float]] = {}
         latest = current
         for key in ("W", "D"):
@@ -571,6 +559,7 @@ class GameMarkerController:
         origin: Coordinate,
         started: float,
     ) -> tuple[bool, Coordinate]:
+        self._set_ocr_reason("cache_validate_keys")
         expected = vectors.get("W")
         if expected is None or math.hypot(*expected) < 0.5:
             return False, current
@@ -594,6 +583,7 @@ class GameMarkerController:
         origin: Coordinate,
         started: float,
     ) -> tuple[bool, Coordinate]:
+        self._set_ocr_reason("cache_validate_mouse")
         mouse_x, _mouse_y = mouse_vectors
         if math.hypot(*mouse_x) < 1e-6:
             return False, current
@@ -797,6 +787,10 @@ class GameMarkerController:
         started = time.monotonic()
         reused_calibration = False
         mouse_vectors: Optional[tuple[tuple[float, float], tuple[float, float]]] = None
+        final_current: Optional[Coordinate] = None
+        status = "error"
+        self.timing.register_thread()
+        self.game_input.timing = self.timing if self.timing.enabled else None
         try:
             self.update_state(status="calibrating", message="Focusing Palworld and reading coordinates")
             self.timing.begin_phase("focus")
@@ -806,9 +800,11 @@ class GameMarkerController:
             self.sleep(0.3)
             self.timing.end_phase("focus")
 
+            self._set_ocr_reason("initial")
             self.timing.begin_phase("initial_read")
             current = self._read(selection_box, selection_point, started, require_stable=True)
             self.timing.end_phase("initial_read")
+            self.timing.run_start(target, current)
             self.update_state(
                 status="calibrating",
                 current=list(current),
@@ -821,6 +817,7 @@ class GameMarkerController:
             if self._cached_key_vectors is not None and not calibration_only:
                 key_vectors = dict(self._cached_key_vectors)
                 reused_calibration = True
+                self.timing.add_calibration("wasd_memory", reused_memory=True)
                 if self._cached_mouse_vectors is not None and OPT_MOUSE_CACHE:
                     ok_mouse, current = self._validate_cached_mouse(
                         self._cached_mouse_vectors,
@@ -843,6 +840,7 @@ class GameMarkerController:
                     if ok:
                         key_vectors = dict(disk_keys)
                         reused_calibration = True
+                        self.timing.add_calibration("wasd_disk", reused_disk=True)
                         if disk_mouse is not None and OPT_MOUSE_CACHE:
                             ok_mouse, current = self._validate_cached_mouse(
                                 disk_mouse,
@@ -860,6 +858,7 @@ class GameMarkerController:
                         invalidate_calibration_cache(self._cache_key)
 
             if key_vectors is None:
+                self.timing.add_calibration("wasd_fresh")
                 key_vectors, current = self._calibrate_keys(
                     current, selection_box, selection_point, started
                 )
@@ -883,14 +882,18 @@ class GameMarkerController:
                     calibration=calibration,
                     message="Calibration completed without movement or confirmation",
                 )
+                status = "completed"
+                final_current = current
                 self.timing.log()
                 return
 
             stable = 0
             regressions = 0
             self.timing.begin_phase("loop")
+            iter_idx = 0
             for _attempt in range(180):
                 self.timing.record_iteration()
+                iter_idx += 1
                 self._check_safety(started)
                 remaining = distance_meters(current, target)
                 self.update_state(
@@ -904,6 +907,7 @@ class GameMarkerController:
                     if stable >= 2:
                         break
                     self.sleep(0.15)
+                    self._set_ocr_reason("gate_final")
                     current = self._read_near(
                         selection_box,
                         selection_point,
@@ -916,6 +920,7 @@ class GameMarkerController:
                 stable = 0
                 previous = current
                 error = (float(target[0] - current[0]), float(target[1] - current[1]))
+                self.timing.iteration_begin(iter_idx, error[0], error[1])
                 action_keys: list[str] = []
                 action_duration = 0.0
                 mouse_moved = False
@@ -939,6 +944,7 @@ class GameMarkerController:
                             round(mouse_y[0], 4),
                             round(mouse_y[1], 4),
                         ]
+                        self.timing.iteration_end([], 0.0, (current[0] - previous[0], current[1] - previous[1]))
                         continue
                     mouse_delta = solve_mouse_delta(error, *mouse_vectors)
                     if mouse_delta is not None:
@@ -965,6 +971,11 @@ class GameMarkerController:
                     require_stable=True,
                 )
                 observed = (current[0] - previous[0], current[1] - previous[1])
+                self.timing.iteration_end(
+                    action_keys if action_keys else (["mouse"] if mouse_moved else []),
+                    action_duration,
+                    observed,
+                )
                 if (
                     len(action_keys) == 1
                     and action_keys
@@ -1018,9 +1029,12 @@ class GameMarkerController:
                 message="Marker placed" if confirm else "Calibration completed",
                 calibration=calibration,
             )
+            status = "completed"
+            final_current = current
             self.timing.log()
         except TimeoutError as exc:
             self.update_state(active=False, status="error", error=str(exc), message=str(exc))
+            status = "error"
             self.timing.log()
         except RuntimeError as exc:
             status = "cancelled" if "cancelled" in str(exc).lower() else "error"
@@ -1036,9 +1050,14 @@ class GameMarkerController:
                 self._cached_mouse_vectors = None
             message = str(exc) or exc.__class__.__name__
             self.update_state(active=False, status="error", error=message, message=message)
+            status = "error"
             self.timing.log()
         finally:
             self.game_input.release_movement_keys()
+            try:
+                self.timing.run_end(status, final_current)
+            except Exception:
+                pass
 
 
 class MouseComboLoop:
