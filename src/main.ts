@@ -3,7 +3,6 @@ import { createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import ToastService from 'primevue/toastservice'
 import { createApp } from 'vue'
-import { registerSW } from 'virtual:pwa-register'
 
 import App from './App.vue'
 import { router } from './router'
@@ -28,10 +27,3 @@ app.use(PrimeVue, {
 })
 app.use(ToastService)
 app.mount('#app')
-
-const updateServiceWorker = registerSW({
-  immediate: true,
-  onNeedRefresh() {
-    void updateServiceWorker(true)
-  },
-})

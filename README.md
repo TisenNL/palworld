@@ -23,6 +23,10 @@ Builds the Vue app when needed, starts the local helper, and opens `http://127.0
 
 On Windows you can also double-click `start.bat` (same entrypoint).
 
+For frontend-only development, use `npm run dev -- --host 0.0.0.0` and open
+`http://localhost:5173/`. The local helper features require `py -3 run.py` so
+the backend is available on port `8765`.
+
 ## Validate
 
 ```bash

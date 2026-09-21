@@ -31,7 +31,7 @@ from .marker_timing import (
     record_ocr_meta,
 )
 
-PORT = 8765
+PORT = int(os.environ.get("PALWORLD_PORT", "8765"))
 VERSION = "tooltip-v20-game-marker"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DIST_ROOT = PROJECT_ROOT / "dist"
@@ -1038,7 +1038,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self._cors()
-        if path.name == "data.json":
+        if path.name in {"data.json", "index.html", "sw.js", "manifest.webmanifest"}:
             self.send_header("Cache-Control", "no-store")
         elif path.parent.name == "assets" and DIST_ROOT in path.parents:
             self.send_header("Cache-Control", "public, max-age=31536000, immutable")

@@ -72,6 +72,7 @@ const materials = computed<MaterialCard[]>(() => {
     tint: ingredientTint.wheat,
     badge: 'for flour',
     priceKey: 'wheat',
+    stockKey: 'wheat',
     buy: wheatBuy,
     subtotal: cake.prices.wheat * wheatBuy,
   })
@@ -362,10 +363,12 @@ function applyPurchase(): void {
 }
 
 .recipe-tile {
-  display: flex;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
   align-items: center;
   gap: clamp(0.4rem, 1vmin, 0.7rem);
   min-width: 0;
+  overflow: hidden;
   padding: clamp(0.4rem, 1vmin, 0.7rem) clamp(0.5rem, 1.1vmin, 0.85rem);
   border: 1px solid color-mix(in srgb, var(--tile-tint) 28%, var(--border));
   border-radius: calc(var(--radius) - 4px);
@@ -397,7 +400,7 @@ function applyPurchase(): void {
 }
 
 .tile-swatch {
-  flex: 0 0 12px;
+  width: 12px;
   height: 36px;
   border-radius: 999px;
   background: linear-gradient(180deg, #fff8, var(--tile-tint));
@@ -408,6 +411,7 @@ function applyPurchase(): void {
   display: grid;
   min-width: 0;
   gap: 1px;
+  overflow: hidden;
 }
 
 .tile-copy strong {
@@ -692,6 +696,7 @@ function applyPurchase(): void {
   display: flex;
   flex-direction: column;
   gap: clamp(0.35rem, 0.9vmin, 0.6rem);
+  min-width: 0;
   height: 100%;
   min-height: 0;
   padding: clamp(0.55rem, 1.15vmin, 0.85rem);
@@ -717,9 +722,20 @@ function applyPurchase(): void {
 
 .ingredient-card header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+
+.ingredient-card header > div {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ingredient-card header strong,
+.ingredient-card header small {
+  min-width: 0;
 }
 
 .item-blob {
@@ -732,20 +748,28 @@ function applyPurchase(): void {
   box-shadow: 0 6px 14px color-mix(in srgb, var(--item-tint) 35%, transparent);
 }
 
-.ingredient-card strong {
+.ingredient-card strong,
+.ingredient-card small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ingredient-card strong {
+  line-height: 1.2;
   font-size: 0.82rem;
 }
 
 .ingredient-card small {
+  margin-top: 2px;
   color: var(--muted);
   font-size: 0.66rem;
 }
 
 .buy-pill {
+  flex: 0 0 auto;
+  min-width: 0;
   padding: 3px 7px;
   border-radius: 999px;
   color: #1a1020;
@@ -757,22 +781,43 @@ function applyPurchase(): void {
 .item-fields {
   display: grid;
   flex: 1 1 auto;
-  align-content: center;
+  align-content: start;
   gap: 8px;
+  min-width: 0;
   min-height: 0;
 }
 
 .item-fields label {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+  padding-top: 2px;
+}
+
+.item-fields label > span {
+  display: block;
+  min-width: 0;
 }
 
 .item-fields span {
   color: var(--muted);
   font-size: 0.64rem;
   font-weight: 750;
+  line-height: 1.2;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  white-space: nowrap;
+  margin-bottom: 1px;
+}
+
+.item-fields :deep(.p-inputnumber),
+.item-fields :deep(.p-inputnumber-input),
+.item-fields :deep(.p-inputtext) {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .ingredient-card footer {
@@ -793,12 +838,8 @@ function applyPurchase(): void {
   font-variant-numeric: tabular-nums;
 }
 
-@media (max-height: 820px) {
+@media (max-height: 600px) {
   .tile-copy small {
-    display: none;
-  }
-
-  .cake-art {
     display: none;
   }
 
@@ -854,6 +895,28 @@ function applyPurchase(): void {
     grid-auto-rows: minmax(9rem, auto);
     height: auto;
     overflow: visible;
+  }
+
+  .ingredient-card header {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+
+  .item-blob {
+    width: 24px;
+    height: 24px;
+  }
+
+  .ingredient-card strong {
+    font-size: 0.76rem;
+  }
+
+  .ingredient-card small {
+    font-size: 0.6rem;
+  }
+
+  .item-fields span {
+    font-size: 0.58rem;
   }
 }
 

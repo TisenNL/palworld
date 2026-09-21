@@ -13,7 +13,9 @@ import webbrowser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+HOST = "127.0.0.1"
 PORT = 8765
+APP_URL = f"http://{HOST}:{PORT}/cakes"
 
 
 def _npm() -> str:
@@ -99,8 +101,8 @@ def _open_browser_when_ready() -> None:
     def worker() -> None:
         time.sleep(1.2)
         try:
-            urllib.request.urlopen(f"http://127.0.0.1:{PORT}/health", timeout=5)
-            webbrowser.open(f"http://127.0.0.1:{PORT}/")
+            urllib.request.urlopen(f"http://{HOST}:{PORT}/health", timeout=5)
+            webbrowser.open(APP_URL)
         except Exception:
             pass
 
@@ -117,6 +119,7 @@ def main() -> int:
     print("Ctrl+C stops the helper.", flush=True)
     print(flush=True)
 
+    os.environ["PALWORLD_PORT"] = str(PORT)
     _powershell(ROOT / "scripts" / "register-protocol.ps1")
     _powershell(ROOT / "scripts" / "kill-helper.ps1")
     _ensure_node()

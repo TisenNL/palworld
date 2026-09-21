@@ -1,8 +1,31 @@
-import { describe, expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('primevue/usetoast', () => ({
+  useToast: () => ({ add: vi.fn() }),
+}))
+
+vi.mock('primevue/button', () => ({
+  default: {
+    name: 'Button',
+    template: '<button><slot /></button>',
+  },
+}))
+
+vi.mock('primevue/inputnumber', () => ({
+  default: {
+    name: 'InputNumber',
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: '<input :value="modelValue" />',
+  },
+}))
 
 import rawGameData from '../public/data.json'
 import rawMapIcons from '../public/map_icons.json'
 import { cakeRecipes, calculateCakes, emptyStock, priceDefaults } from '@/domain/cakes'
+import CakesView from '@/views/CakesView.vue'
 import { gameToImage, imageToGame, parseCoordinates } from '@/domain/coordinates'
 import { buildLayers } from '@/domain/layers'
 import { LruCache } from '@/domain/lruCache'
@@ -79,6 +102,20 @@ describe('cake calculator', () => {
     const result = calculateCakes(0, 0, cakeRecipes[0]!, stock, priceDefaults)
     expect(result.maximum).toBe(1)
     expect(result.spent).toBe(0)
+  })
+
+  it('hides price inputs for derived flour and honey cards', () => {
+    setActivePinia(createPinia())
+    const wrapper = mount(CakesView)
+    const derivedCards = wrapper
+      .findAll('.ingredient-card')
+      .filter((card) => card.text().includes('Flour') || card.text().includes('Honey'))
+
+    expect(derivedCards.length).toBeGreaterThan(0)
+    for (const card of derivedCards) {
+      expect(card.text()).not.toContain('Price')
+      expect(card.findAll('label')).toHaveLength(1)
+    }
   })
 })
 
