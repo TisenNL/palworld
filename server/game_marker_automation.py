@@ -74,7 +74,7 @@ SETTLE_AFTER_KEYS = 0.10      # was 0.14
 # and only proceed to OCR once the frames are sufficiently similar (map stopped scrolling).
 PIXEL_STABLE_INTERVAL = 0.030   # seconds between the two comparison frames
 PIXEL_STABLE_THRESHOLD = 0.015  # max fraction of pixels that may differ (1.5%)
-PIXEL_STABLE_MAX_WAIT = 0.25    # bail out and OCR anyway after this many seconds
+PIXEL_STABLE_MAX_WAIT = 0.40    # bail out and OCR anyway after this many seconds
 OPEN_LOOP_ENTER = 35.0
 OPEN_LOOP_RESERVE = 14.0
 OPEN_LOOP_FRACTION = 0.93
@@ -82,7 +82,7 @@ OPEN_LOOP_MIN_TRAVEL = 24.0
 OPEN_LOOP_MAX_HOLD = 3.0
 OPEN_LOOP_CAL_HOLD = 0.06
 OPEN_LOOP_MAX_BURSTS = 1
-SETTLE_AFTER_OPEN_LOOP = 0.09  # was 0.12
+SETTLE_AFTER_OPEN_LOOP = 0.14  # was 0.12; increased for open-loop burst inertia
 
 
 def distance_meters(first: Coordinate, second: Coordinate) -> int:
@@ -547,9 +547,6 @@ class GameMarkerController:
             )
         needed = 2
         attempts = max(needed + 1, int(math.ceil(max_wait / poll)))
-        # Gate: wait until the HUD pixels stop changing before firing OCR.
-        # This prevents "implausible coordinate jump" from reading mid-scroll.
-        self._wait_pixels_stable(box, started)
         last: Optional[Coordinate] = None
         streak = 0
         for _ in range(attempts):
@@ -607,10 +604,16 @@ class GameMarkerController:
         maximum_delta: float = 200.0,
         require_stable: bool = True,
     ) -> Coordinate:
-        for _attempt in range(3):
+        # Wait for the HUD to stop animating before each attempt.
+        # This is the single authoritative pixel-gate covering every call site.
+        self._wait_pixels_stable(box, started)
+        for _attempt in range(5):
             value = self._read(box, origin, started, require_stable=require_stable)
             if math.hypot(value[0] - previous[0], value[1] - previous[1]) <= maximum_delta:
                 return value
+            # Coordinate jumped — map may still be settling. Wait and retry.
+            self.sleep(0.06)
+            self._wait_pixels_stable(box, started)
         raise RuntimeError("OCR reported an implausible coordinate jump")
 
     def _calibrate_mouse(
@@ -1185,6 +1188,7 @@ class GameMarkerController:
                             previous,
                             SETTLE_AFTER_OPEN_LOOP,
                             require_stable=True,
+                            maximum_delta=500.0,
                             allow_single_read=True,
                         )
                         observed = (
