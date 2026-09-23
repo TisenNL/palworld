@@ -1330,6 +1330,31 @@ def start_server() -> None:
     server.serve_forever()
 
 
+def _warmup_ocr() -> None:
+    """Pre-load the ONNX model so the first real mark doesn't pay the cold-start cost.
+
+    Acquires _recognition_lock so the warmup and the first real OCR call cannot
+    race to initialise _ocr_direct_engine at the same time.
+    """
+    if ocr_selector is None:
+        return
+    try:
+        import numpy as np
+        # A fake crop at the typical 5x upscaled size (120x28 x 5 = 600x140)
+        fake = np.zeros((140, 600, 3), dtype=np.uint8)
+        with ocr_selector._recognition_lock:
+            if ocr_selector._ocr_direct_engine is None:
+                from rapidocr_onnxruntime import RapidOCR
+                ocr_selector._ocr_direct_engine = RapidOCR(
+                    use_text_det=False,
+                    use_angle_cls=False,
+                )
+            ocr_selector._ocr_direct_engine(fake)
+        print("[warmup] OCR engine pre-loaded", flush=True)
+    except Exception as exc:
+        print(f"[warmup] OCR warm-up skipped: {exc}", flush=True)
+
+
 def main() -> None:
     global overlay, ocr_selector, game_marker_controller, mouse_loop_controller
     overlay = HudTooltip()
@@ -1339,6 +1364,9 @@ def main() -> None:
         update_game_marker_state,
     )
     mouse_loop_controller = MouseComboLoop(update_mouse_loop_state)
+    # Pre-warm the ONNX model in the background so the first marking call
+    # does not pay the cold-start penalty (typically 500ms-2s).
+    threading.Thread(target=_warmup_ocr, daemon=True).start()
     threading.Thread(target=start_server, daemon=True).start()
     ml, mt, mw, mh = largest_monitor()
     ax, ay = hud_anchor_xy()

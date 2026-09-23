@@ -44,6 +44,7 @@ def _env_flag(name: str, default: str = "1") -> bool:
 
 
 OPT_ADAPTIVE_SLEEP = _env_flag("PALWORLD_MARKER_ADAPTIVE_SLEEP", "1")
+OPT_PIXEL_STABLE = _env_flag("PALWORLD_MARKER_PIXEL_STABLE", "1")
 OPT_DISK_CALIBRATION = _env_flag("PALWORLD_MARKER_DISK_CALIBRATION", "1")
 OPT_MOUSE_CACHE = _env_flag("PALWORLD_MARKER_MOUSE_CACHE", "1")
 OPT_DUAL_AXIS = _env_flag("PALWORLD_MARKER_DUAL_AXIS", "1")
@@ -52,6 +53,7 @@ OPT_SINGLE_OCR_FAR = _env_flag("PALWORLD_MARKER_SINGLE_OCR_FAR", "1")
 OPT_SKIP_FOCUS_IF_FOREGROUND = _env_flag("PALWORLD_MARKER_SKIP_FOCUS_IF_FOREGROUND", "1")
 OPT_OPEN_LOOP = _env_flag("PALWORLD_MARKER_OPEN_LOOP", "1")
 OPT_LIGHT_CALIBRATION = _env_flag("PALWORLD_MARKER_LIGHT_CALIBRATION", "1")
+OPT_SKIP_CURSOR_SETTLE = _env_flag("PALWORLD_MARKER_SKIP_CURSOR_SETTLE", "1")
 MARKER_TIMING = _env_flag("PALWORLD_MARKER_TIMING", "0")
 
 NEAR_FIELD = 22.0
@@ -61,13 +63,18 @@ MOUSE_VALIDATE_ALIGNMENT = 0.35
 MOUSE_MAX_STEP_NEAR = 30.0
 MOUSE_MAX_STEP_WIDE = 70.0
 DUAL_AXIS_MIN_ERROR = 60.0
-SINGLE_OCR_MIN_ERROR = 40.0
-SINGLE_OCR_MIN_CONF = 0.82
+SINGLE_OCR_MIN_ERROR = 30.0   # was 40.0 - engage single-read sooner
+SINGLE_OCR_MIN_CONF = 0.76    # was 0.82 - accept lower confidence in open field
 CONFIRM_STABLE_FRAMES = 2
-CONFIRM_WAIT_MAX = 0.5
-CONFIRM_WAIT_MIN = 0.10
-SETTLE_AFTER_MOUSE = 0.08
-SETTLE_AFTER_KEYS = 0.14
+CONFIRM_WAIT_MAX = 0.35       # was 0.50 - dialog appears within 250ms on normal hardware
+CONFIRM_WAIT_MIN = 0.07       # was 0.10
+SETTLE_AFTER_MOUSE = 0.06     # was 0.08 - HUD updates at ~10Hz; 60ms is safe
+SETTLE_AFTER_KEYS = 0.10      # was 0.14
+# Pixel-stability gate: capture two frames of the HUD region with this interval
+# and only proceed to OCR once the frames are sufficiently similar (map stopped scrolling).
+PIXEL_STABLE_INTERVAL = 0.030   # seconds between the two comparison frames
+PIXEL_STABLE_THRESHOLD = 0.015  # max fraction of pixels that may differ (1.5%)
+PIXEL_STABLE_MAX_WAIT = 0.25    # bail out and OCR anyway after this many seconds
 OPEN_LOOP_ENTER = 35.0
 OPEN_LOOP_RESERVE = 14.0
 OPEN_LOOP_FRACTION = 0.93
@@ -75,7 +82,7 @@ OPEN_LOOP_MIN_TRAVEL = 24.0
 OPEN_LOOP_MAX_HOLD = 3.0
 OPEN_LOOP_CAL_HOLD = 0.06
 OPEN_LOOP_MAX_BURSTS = 1
-SETTLE_AFTER_OPEN_LOOP = 0.12
+SETTLE_AFTER_OPEN_LOOP = 0.09  # was 0.12
 
 
 def distance_meters(first: Coordinate, second: Coordinate) -> int:
@@ -467,6 +474,53 @@ class GameMarkerController:
             self.timing._last_ocr_total_ms = 0.0
         return result
 
+    def _wait_pixels_stable(self, box: Box, started: float) -> None:
+        """Block until the HUD pixel region stops changing between two frames.
+
+        Captures the coordinate-HUD bounding box twice, separated by
+        PIXEL_STABLE_INTERVAL seconds, and compares them.  If more than
+        PIXEL_STABLE_THRESHOLD of pixels differ we sleep another interval
+        and try again.  Gives up after PIXEL_STABLE_MAX_WAIT seconds to
+        avoid stalling when the HUD itself is animating (e.g. first focus).
+
+        This eliminates "OCR reported an implausible coordinate jump" errors
+        caused by reading mid-scroll inertia after a WASD burst.
+        """
+        if not OPT_PIXEL_STABLE:
+            return
+        try:
+            from PIL import ImageGrab
+            import numpy as np
+        except ImportError:
+            return
+
+        left, top, right, bottom = (int(box[0]), int(box[1]), int(box[2]), int(box[3]))
+        deadline = time.perf_counter() + PIXEL_STABLE_MAX_WAIT
+
+        try:
+            frame_a = np.asarray(
+                ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True)
+            ).astype(np.int16)
+        except Exception:
+            return
+
+        while time.perf_counter() < deadline:
+            self._check_safety(started)
+            # Use self.sleep so timing is recorded and Esc cancel is honoured.
+            self.sleep(PIXEL_STABLE_INTERVAL)
+            self._check_safety(started)
+            try:
+                frame_b = np.asarray(
+                    ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True)
+                ).astype(np.int16)
+            except Exception:
+                return
+            diff = np.abs(frame_b - frame_a)
+            changed = float((diff > 12).any(axis=2).mean())
+            if changed <= PIXEL_STABLE_THRESHOLD:
+                return  # stable enough — proceed to OCR
+            frame_a = frame_b
+
     def _read_after_action(
         self,
         box: Box,
@@ -476,7 +530,7 @@ class GameMarkerController:
         max_wait: float,
         require_stable: bool = True,
         maximum_delta: float = 200.0,
-        poll: float = 0.05,
+        poll: float = 0.04,
         allow_single_read: bool = False,
     ) -> Coordinate:
         """Wait for the map to settle and return the post-action coordinate."""
@@ -493,6 +547,9 @@ class GameMarkerController:
             )
         needed = 2
         attempts = max(needed + 1, int(math.ceil(max_wait / poll)))
+        # Gate: wait until the HUD pixels stop changing before firing OCR.
+        # This prevents "implausible coordinate jump" from reading mid-scroll.
+        self._wait_pixels_stable(box, started)
         last: Optional[Coordinate] = None
         streak = 0
         for _ in range(attempts):
@@ -604,13 +661,13 @@ class GameMarkerController:
         vectors: dict[str, tuple[float, float]] = {}
         latest = current
         for key in ("W", "D"):
-            self.game_input.tap_key(key, 0.06)
+            self.game_input.tap_key(key, 0.05)
             moved = self._read_after_action(
                 box,
                 origin,
                 started,
                 latest,
-                0.20 if OPT_LIGHT_CALIBRATION else 0.24,
+                0.15 if OPT_LIGHT_CALIBRATION else 0.18,
                 require_stable=True,
                 allow_single_read=False,
             )
@@ -634,13 +691,13 @@ class GameMarkerController:
         expected = vectors.get("W")
         if expected is None or math.hypot(*expected) < 0.5:
             return False, current
-        self.game_input.tap_key("W", 0.06)
+        self.game_input.tap_key("W", 0.05)
         moved = self._read_after_action(
             box,
             origin,
             started,
             current,
-            0.18 if OPT_LIGHT_CALIBRATION else 0.24,
+            0.14 if OPT_LIGHT_CALIBRATION else 0.18,
             require_stable=True,
             allow_single_read=False,
         )
@@ -916,7 +973,7 @@ class GameMarkerController:
         except Exception:
             self.sleep(max(0.0, CONFIRM_WAIT_MAX - CONFIRM_WAIT_MIN))
             return
-        attempts = max(CONFIRM_STABLE_FRAMES, int(math.ceil((CONFIRM_WAIT_MAX - CONFIRM_WAIT_MIN) / 0.05)))
+        attempts = max(CONFIRM_STABLE_FRAMES, int(math.ceil((CONFIRM_WAIT_MAX - CONFIRM_WAIT_MIN) / 0.04)))
         stable = 0
         for _ in range(attempts):
             self._check_safety(started)
@@ -930,7 +987,7 @@ class GameMarkerController:
                     return
             else:
                 stable = 0
-            self.sleep(0.05)
+            self.sleep(0.04)
 
     def _run(
         self,
@@ -954,7 +1011,11 @@ class GameMarkerController:
             if not self.game_input.focus_game():
                 raise RuntimeError("Palworld window was not found or could not receive focus")
             self.game_input.move_cursor(*selection_point)
-            self.sleep(0.12 if OPT_LIGHT_CALIBRATION else 0.3)
+            # Task 6: skip the cursor-settle sleep if game was already foreground
+            if OPT_SKIP_CURSOR_SETTLE and self.game_input.game_is_foreground():
+                self.sleep(0.04)
+            else:
+                self.sleep(0.12 if OPT_LIGHT_CALIBRATION else 0.3)
             self.timing.end_phase("focus")
 
             self._set_ocr_reason("initial")
@@ -978,6 +1039,7 @@ class GameMarkerController:
                 if self._cached_mouse_vectors is not None and OPT_MOUSE_CACHE:
                     if OPT_LIGHT_CALIBRATION:
                         mouse_vectors = self._cached_mouse_vectors
+                        print("[marker] mouse cache hit (memory, light)", flush=True)
                     else:
                         ok_mouse, current = self._validate_cached_mouse(
                             self._cached_mouse_vectors,
@@ -988,8 +1050,12 @@ class GameMarkerController:
                         )
                         if ok_mouse:
                             mouse_vectors = self._cached_mouse_vectors
+                            print("[marker] mouse cache hit (memory, validated)", flush=True)
                         else:
+                            print("[marker] mouse cache miss (validation failed)", flush=True)
                             self._discard_mouse_cache()
+                else:
+                    print("[marker] mouse cache miss (not yet calibrated)", flush=True)
                 self.update_state(message="Using validated WASD calibration")
             elif not calibration_only:
                 disk_keys, disk_mouse = self._load_disk_calibration()
@@ -1257,7 +1323,10 @@ class GameMarkerController:
                 self.timing.end_phase("confirm")
             self._cached_key_vectors = dict(key_vectors)
             if mouse_vectors is not None:
+                # Persist updated mouse vectors so the next marker in the queue
+                # gets the most-recent calibration rather than the original.
                 self._cached_mouse_vectors = mouse_vectors
+                print(f"[marker] mouse vectors cached for next run: {mouse_vectors}", flush=True)
             self._persist_disk_calibration(key_vectors, mouse_vectors)
             self.update_state(
                 active=False,

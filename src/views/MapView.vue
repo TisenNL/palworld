@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import InputNumber from 'primevue/inputnumber'
@@ -182,9 +182,12 @@ function goToNearest(): void {
   map.hoverText = `${nearest.marker.label} · ${nearest.distanceMeters.toLocaleString('en-US')} m away`
 }
 
+const MARK_MAX_RETRIES = 3
+
 /**
  * Mark in game: iterate through all selected markers one by one.
- * Waits for each game marker automation to complete before starting the next.
+ * Each marker is retried up to MARK_MAX_RETRIES times on error before
+ * stopping the queue. Cancelled (Esc) stops immediately without retry.
  */
 async function markInGame(): Promise<void> {
   if (markInGameRunning.value) return
@@ -205,22 +208,68 @@ async function markInGame(): Promise<void> {
   markInGameRunning.value = true
   try {
     for (const marker of queue) {
-      try {
-        await server.startGameMarker(marker.item)
+      let attempt = 0
+      let finalStatus = ''
+
+      while (attempt < MARK_MAX_RETRIES) {
+        attempt++
+
+        try {
+          await server.startGameMarker(marker.item)
+          if (attempt === 1) {
+            toast.add({
+              severity: 'info',
+              summary: 'Automation started',
+              detail: `${marker.label} — Palworld will receive focus automatically. Press Esc to cancel.`,
+              life: 5000,
+            })
+          } else {
+            toast.add({
+              severity: 'warn',
+              summary: `Retrying (${attempt}/${MARK_MAX_RETRIES})`,
+              detail: marker.label,
+              life: 3000,
+            })
+          }
+        } catch {
+          toast.add({
+            severity: 'error',
+            summary: 'Automation unavailable',
+            detail: server.error || 'Could not start game marker automation.',
+            life: 4000,
+          })
+          finalStatus = 'error'
+          break
+        }
+
+        finalStatus = await waitForGameMarkerDone()
+
+        // Cancelled means user pressed Esc — stop immediately, no retry.
+        if (finalStatus === 'cancelled') break
+
+        // Completed — move to next marker.
+        if (finalStatus === 'completed') break
+
+        // Error — will retry unless we've hit the limit.
+        if (attempt < MARK_MAX_RETRIES) {
+          toast.add({
+            severity: 'warn',
+            summary: 'Retrying after error',
+            detail: server.gameMarker?.message || server.gameMarker?.error || marker.label,
+            life: 3000,
+          })
+          // Brief pause before retry so the server resets cleanly.
+          await delay(800)
+        }
+      }
+
+      if (finalStatus !== 'completed') {
+        const isCancelled = finalStatus === 'cancelled'
         toast.add({
-          severity: 'info',
-          summary: 'Automation started',
-          detail: `${marker.label} — Palworld will receive focus automatically. Press Esc to cancel.`,
+          severity: isCancelled ? 'warn' : 'error',
+          summary: isCancelled ? 'Automation cancelled' : 'Automation failed',
+          detail: server.gameMarker?.message || server.gameMarker?.error || marker.label,
           life: 5000,
-        })
-        // Wait for this marker's automation to finish before moving to the next
-        await waitForGameMarkerIdle()
-      } catch {
-        toast.add({
-          severity: 'error',
-          summary: 'Automation unavailable',
-          detail: server.error || 'Could not start game marker automation.',
-          life: 4000,
         })
         break
       }
@@ -230,18 +279,36 @@ async function markInGame(): Promise<void> {
   }
 }
 
-/** Polls until the game marker automation is no longer busy. */
-function waitForGameMarkerIdle(): Promise<void> {
-  return new Promise((resolve) => {
-    function check(): void {
-      if (!server.gameMarkerBusy) {
-        resolve()
-        return
-      }
-      window.setTimeout(check, 300)
+/**
+ * Polls /game-marker/state until the automation reaches a terminal status
+ * (completed, cancelled, or error) with active=false, then returns that status.
+ *
+ * Keyed off status string + active flag — not the volatile boolean gameMarkerBusy —
+ * so it is immune to the race where active flips true→false before the first poll.
+ */
+async function waitForGameMarkerDone(): Promise<string> {
+  const TERMINAL = new Set(['completed', 'cancelled', 'error'])
+
+  for (;;) {
+    // Read the reactive state that the store auto-polls every 150ms while active.
+    const state = server.gameMarker
+    if (state && !state.active && TERMINAL.has(state.status)) {
+      return state.status
     }
-    check()
-  })
+    // When active=false the store stops auto-polling, so drive one explicit poll
+    // to pick up the final state, then check again immediately.
+    if (state && !state.active) {
+      await server.pollGameMarker()
+      const final = server.gameMarker
+      if (final && TERMINAL.has(final.status)) return final.status
+    }
+    // Yield for one poll cycle before reading again.
+    await delay(150)
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 async function toggleMouseLoop(): Promise<void> {

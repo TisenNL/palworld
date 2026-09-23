@@ -59,7 +59,7 @@ export const useServerHudStore = defineStore('serverHud', () => {
     try {
       gameMarker.value = await api.getGameMarkerState()
       if (gameMarker.value.active) {
-        gameMarkerTimer = window.setTimeout(() => void pollGameMarker(), 350)
+        gameMarkerTimer = window.setTimeout(() => void pollGameMarker(), 150)
       }
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Game marker status failed'
