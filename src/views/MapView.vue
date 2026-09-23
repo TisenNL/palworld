@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import InputNumber from 'primevue/inputnumber'
@@ -36,6 +36,7 @@ const browseGroup = ref(preferences.values.mapBrowseGroup)
 const popup = ref({ visible: false, x: 0, y: 0 })
 const mouseLoopSeconds = ref(40)
 let cameraTimer: number | undefined
+const markInGameRunning = ref(false)
 
 const visibleCount = computed(
   () => checklist.layers.filter((layer) => preferences.values.mapLayers[layer.id]).length,
@@ -51,6 +52,7 @@ const nearestMarker = computed(() =>
   map.selectedMarker ? map.nearestSameType(map.selectedMarker) : null,
 )
 const searching = computed(() => map.search.trim().length > 0)
+const selectionCount = computed(() => map.selectedIds.size)
 
 function panelOpen(key: string, fallback = true): boolean {
   return preferences.values.sideBlockOpen[key] ?? fallback
@@ -123,6 +125,13 @@ async function runOcr(): Promise<void> {
   }
 }
 
+/** Left-click on map icon: toggle selection (no popup). */
+function handleSelect(marker: MapMarker | null): void {
+  if (!marker) return
+  map.toggleSelected(marker.id)
+}
+
+/** Right-click on map icon: open popup + optionally toggle HUD. */
 function openPopup(marker: MapMarker | null, position: { x: number; y: number }): void {
   map.showMarker(marker)
   popup.value = {
@@ -173,9 +182,15 @@ function goToNearest(): void {
   map.hoverText = `${nearest.marker.label} · ${nearest.distanceMeters.toLocaleString('en-US')} m away`
 }
 
+/**
+ * Mark in game: iterate through all selected markers one by one.
+ * Waits for each game marker automation to complete before starting the next.
+ */
 async function markInGame(): Promise<void> {
-  const marker = map.selectedMarker
-  if (!marker) return
+  if (markInGameRunning.value) return
+  const queue = [...map.selectedMarkers]
+  if (!queue.length) return
+
   if (!server.online) {
     window.location.href = 'palchecklist://start'
     toast.add({
@@ -186,22 +201,47 @@ async function markInGame(): Promise<void> {
     })
     return
   }
+
+  markInGameRunning.value = true
   try {
-    await server.startGameMarker(marker.item)
-    toast.add({
-      severity: 'info',
-      summary: 'Automation started',
-      detail: 'Palworld will receive focus automatically. Press Esc to cancel.',
-      life: 5000,
-    })
-  } catch {
-    toast.add({
-      severity: 'error',
-      summary: 'Automation unavailable',
-      detail: server.error || 'Could not start game marker automation.',
-      life: 4000,
-    })
+    for (const marker of queue) {
+      try {
+        await server.startGameMarker(marker.item)
+        toast.add({
+          severity: 'info',
+          summary: 'Automation started',
+          detail: `${marker.label} — Palworld will receive focus automatically. Press Esc to cancel.`,
+          life: 5000,
+        })
+        // Wait for this marker's automation to finish before moving to the next
+        await waitForGameMarkerIdle()
+      } catch {
+        toast.add({
+          severity: 'error',
+          summary: 'Automation unavailable',
+          detail: server.error || 'Could not start game marker automation.',
+          life: 4000,
+        })
+        break
+      }
+    }
+  } finally {
+    markInGameRunning.value = false
   }
+}
+
+/** Polls until the game marker automation is no longer busy. */
+function waitForGameMarkerIdle(): Promise<void> {
+  return new Promise((resolve) => {
+    function check(): void {
+      if (!server.gameMarkerBusy) {
+        resolve()
+        return
+      }
+      window.setTimeout(check, 300)
+    }
+    check()
+  })
 }
 
 async function toggleMouseLoop(): Promise<void> {
@@ -438,6 +478,53 @@ void server.pollMouseLoop()
               outlined
               @click="server.clearHud"
             />
+
+            <!-- Mark in game section -->
+            <div v-if="selectionCount > 0 || server.gameMarkerBusy" class="mark-in-game-section">
+              <p class="selection-count">
+                {{ selectionCount }} marker{{ selectionCount !== 1 ? 's' : '' }} selected
+                <button
+                  v-if="selectionCount > 0"
+                  type="button"
+                  class="clear-selection"
+                  aria-label="Clear selection"
+                  @click="map.clearSelected()"
+                >
+                  ×
+                </button>
+              </p>
+              <div v-if="server.gameMarkerBusy" class="game-marker-progress">
+                <span>{{ server.gameMarker?.message }}</span>
+                <small v-if="server.gameMarker?.current">
+                  {{ server.gameMarker.current.join(', ') }}
+                  <template v-if="server.gameMarker.distanceMeters !== null">
+                    · {{ server.gameMarker.distanceMeters.toLocaleString('en-US') }} m
+                  </template>
+                </small>
+                <Button
+                  label="Cancel"
+                  icon="pi pi-times"
+                  size="small"
+                  severity="danger"
+                  text
+                  @click="server.cancelGameMarker"
+                />
+              </div>
+              <Button
+                v-else
+                label="Mark in game"
+                icon="pi pi-map-marker"
+                size="small"
+                severity="contrast"
+                :disabled="selectionCount === 0 || markInGameRunning"
+                :aria-label="`Mark ${selectionCount} selected marker${selectionCount !== 1 ? 's' : ''} in game`"
+                @click="markInGame"
+              />
+              <small v-if="!server.gameMarkerBusy" class="game-marker-hint">
+                Open the Palworld map at maximum zoom in borderless mode. Focus, movement and
+                confirmation are automatic.
+              </small>
+            </div>
           </div>
         </CompactPanel>
       </div>
@@ -469,8 +556,9 @@ void server.pollMouseLoop()
         ref="canvas"
         :markers="map.markers"
         :camera="map.camera"
+        :selected-ids="map.selectedIds"
         @camera-change="updateCamera"
-        @select="openPopup"
+        @select="handleSelect"
         @context="contextMarker"
         @hover="map.hoverText = $event"
       />
@@ -490,24 +578,7 @@ void server.pollMouseLoop()
         <span class="popup-type">{{ map.selectedMarker.layerId }}</span>
         <strong>{{ map.selectedMarker.label }}</strong>
         <small>{{ map.selectedMarker.item.x }}, {{ map.selectedMarker.item.y }}</small>
-        <div v-if="server.gameMarkerBusy" class="game-marker-progress">
-          <span>{{ server.gameMarker?.message }}</span>
-          <small v-if="server.gameMarker?.current">
-            {{ server.gameMarker.current.join(', ') }}
-            <template v-if="server.gameMarker.distanceMeters !== null">
-              · {{ server.gameMarker.distanceMeters.toLocaleString('en-US') }} m
-            </template>
-          </small>
-          <Button
-            label="Cancel"
-            icon="pi pi-times"
-            size="small"
-            severity="danger"
-            text
-            @click="server.cancelGameMarker"
-          />
-        </div>
-        <div v-else class="popup-actions">
+        <div class="popup-actions">
           <Button
             :label="map.selectedMarker.done ? 'Pending' : 'Complete'"
             :icon="map.selectedMarker.done ? 'pi pi-undo' : 'pi pi-check'"
@@ -531,18 +602,7 @@ void server.pollMouseLoop()
             outlined
             @click="goToNearest"
           />
-          <Button
-            label="Mark in game"
-            icon="pi pi-map-marker"
-            size="small"
-            severity="contrast"
-            @click="markInGame"
-          />
         </div>
-        <small v-if="!server.gameMarkerBusy" class="game-marker-hint">
-          Open the Palworld map at maximum zoom in borderless mode. Focus, movement and confirmation
-          are automatic.
-        </small>
       </div>
     </section>
   </div>
@@ -775,6 +835,50 @@ void server.pollMouseLoop()
   line-height: 1.3;
 }
 
+.mark-in-game-section {
+  display: grid;
+  gap: 5px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.selection-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.clear-selection {
+  padding: 0 3px;
+  border: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  background: transparent;
+  cursor: pointer;
+}
+
+.clear-selection:hover {
+  color: var(--text);
+}
+
+.game-marker-progress {
+  display: grid;
+  gap: 3px;
+  color: var(--text);
+  font-size: 0.68rem;
+}
+
+.game-marker-hint {
+  max-width: 215px;
+  color: var(--muted);
+  font-size: 0.65rem;
+  line-height: 1.25;
+}
+
 .server-status {
   display: flex;
   align-items: center;
@@ -863,24 +967,6 @@ void server.pollMouseLoop()
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 5px;
-}
-
-.game-marker-progress {
-  display: grid;
-  gap: 3px;
-  margin-top: 5px;
-  color: var(--text);
-  font-size: 0.68rem;
-}
-
-.game-marker-progress :deep(.p-button) {
-  justify-self: start;
-}
-
-.game-marker-hint {
-  max-width: 215px;
-  margin-top: 4px;
-  line-height: 1.25;
 }
 
 .marker-popup :deep(.p-button) {

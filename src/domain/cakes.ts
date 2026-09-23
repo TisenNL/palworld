@@ -69,9 +69,9 @@ export const cakeRecipes: CakeRecipe[] = [
   {
     id: 'cake',
     label: 'Cake',
-    flourPer: 5,
+    flourPer: 1,
     honeyPer: 2,
-    note: '5 Flour, 8 Red Berries, 7 Milk, 8 Eggs, and 2 Honey.',
+    note: '1 Flour, 8 Red Berries, 7 Milk, 8 Eggs, and 2 Honey.',
     ingredients: [
       ingredient('berry', 'Red Berries', 8),
       ingredient('milk', 'Milk', 7),
@@ -81,9 +81,9 @@ export const cakeRecipes: CakeRecipe[] = [
   {
     id: 'mushroom',
     label: 'Mushroom Cake',
-    flourPer: 5,
+    flourPer: 1,
     honeyPer: 2,
-    note: '5 Flour, 5 Mushrooms, 3 Cavern Mushrooms, 8 Eggs, and 2 Honey.',
+    note: '1 Flour, 5 Mushrooms, 3 Cavern Mushrooms, 8 Eggs, and 2 Honey.',
     ingredients: [
       ingredient('mushroom', 'Mushroom', 5),
       ingredient('cavern', 'Cavern Mushroom', 3),
@@ -93,9 +93,9 @@ export const cakeRecipes: CakeRecipe[] = [
   {
     id: 'vegetable',
     label: 'Vegetable Cake',
-    flourPer: 8,
+    flourPer: 1,
     honeyPer: 4,
-    note: '8 Flour, 8 Tomatoes, 7 Lettuce, 8 Eggs, and 4 Honey.',
+    note: '1 Flour, 8 Tomatoes, 7 Lettuce, 8 Eggs, and 4 Honey.',
     ingredients: [
       ingredient('tomato', 'Tomato', 8),
       ingredient('lettuce', 'Lettuce', 7),
@@ -105,9 +105,9 @@ export const cakeRecipes: CakeRecipe[] = [
   {
     id: 'extravagant',
     label: 'Extravagant Vegetable Cake',
-    flourPer: 12,
+    flourPer: 1,
     honeyPer: 0,
-    note: '12 Flour, 8 Cotton Candy, 10 Potatoes, 6 Onions, and 8 Carrots.',
+    note: '1 Flour, 8 Cotton Candy, 10 Potatoes, 6 Onions, and 8 Carrots.',
     ingredients: [
       ingredient('cotton', 'Cotton Candy', 8),
       ingredient('potato', 'Potato', 10),
@@ -118,9 +118,9 @@ export const cakeRecipes: CakeRecipe[] = [
   {
     id: 'special',
     label: 'Special Cake',
-    flourPer: 20,
+    flourPer: 1,
     honeyPer: 0,
-    note: '20 Flour, 8 Caramel Cotton Candy, 15 Milk, 15 Eggs, and 2 Mammorest Meat.',
+    note: '1 Flour, 8 Caramel Cotton Candy, 15 Milk, 15 Eggs, and 2 Mammorest Meat.',
     ingredients: [
       ingredient('caramel', 'Caramel Cotton Candy', 8),
       ingredient('milk', 'Milk', 15),
@@ -133,10 +133,12 @@ export const cakeRecipes: CakeRecipe[] = [
 export interface CakeCalculation {
   maximum: number
   amount: number
+  shortfall: number
   spent: number
   remaining: number
   unitCost: number
   honeyCap: number | null
+  wheatNeeded: number
   purchases: Partial<CakeValues>
 }
 
@@ -146,9 +148,8 @@ function purchasesFor(
   stock: CakeValues,
   prices: CakeValues,
 ): { values: Partial<CakeValues>; spent: number } {
-  const wheat = Math.max(0, amount * recipe.flourPer - stock.flour) * 3
-  const values: Partial<CakeValues> = { wheat }
-  let spent = wheat * prices.wheat
+  const values: Partial<CakeValues> = {}
+  let spent = 0
   for (const item of recipe.ingredients) {
     const quantity = Math.max(0, amount * item.per - stock[item.stock])
     values[item.key] = quantity
@@ -165,12 +166,12 @@ export function calculateCakes(
   prices: CakeValues,
 ): CakeCalculation {
   const unitCost =
-    recipe.flourPer * 3 * prices.wheat +
     recipe.ingredients.reduce((sum, item) => sum + item.per * prices[item.price], 0)
   const honeyCap =
     recipe.honeyPer > 0 && stock.honey > 0 ? Math.floor(stock.honey / recipe.honeyPer) : null
+  const flourCap = Math.floor(stock.flour / recipe.flourPer)
   let high =
-    Math.floor(stock.flour / recipe.flourPer) +
+    flourCap +
     recipe.ingredients.reduce((sum, item) => sum + Math.floor(stock[item.stock] / item.per), 2) +
     (unitCost > 0 ? Math.floor(gold / unitCost) + 2 : 100_000)
   if (honeyCap !== null) high = Math.min(high, honeyCap)
@@ -180,7 +181,11 @@ export function calculateCakes(
   while (low <= high) {
     const middle = (low + high) >> 1
     const purchase = purchasesFor(middle, recipe, stock, prices)
-    if (purchase.spent <= gold && (honeyCap === null || middle <= honeyCap)) {
+    if (
+      purchase.spent <= gold &&
+      middle <= flourCap &&
+      (honeyCap === null || middle <= honeyCap)
+    ) {
       maximum = middle
       low = middle + 1
     } else {
@@ -189,13 +194,16 @@ export function calculateCakes(
   }
   const amount = target > 0 ? Math.min(target, maximum) : maximum
   const purchase = purchasesFor(amount, recipe, stock, prices)
+  const wheatNeeded = Math.max(0, (target - stock.flour) * 3)
   return {
     maximum,
     amount,
+    shortfall: Math.max(0, target - maximum),
     spent: purchase.spent,
     remaining: Math.max(0, gold - purchase.spent),
     unitCost,
     honeyCap,
+    wheatNeeded,
     purchases: purchase.values,
   }
 }

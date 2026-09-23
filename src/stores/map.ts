@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+﻿import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
 
 import { layerItems } from '@/domain/layers'
@@ -16,6 +16,9 @@ export const useMapStore = defineStore('map', () => {
   const selectedMarker = ref<MapMarker | null>(null)
   const hoverText = ref('')
   const camera = reactive({ x: 0, y: 0, scale: 0.05 })
+
+  // Multi-selection: reactive Set so .has() / .size triggers computed updates
+  const selectedIds = reactive(new Set<string>())
 
   const palIcons = computed(() => {
     const values = checklist.breedData?.pals ?? []
@@ -87,6 +90,11 @@ export const useMapStore = defineStore('map', () => {
     return output.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
   })
 
+  /** Markers currently selected (left-click toggled). Preserves markers order. */
+  const selectedMarkers = computed<MapMarker[]>(() =>
+    markers.value.filter((marker) => selectedIds.has(marker.id)),
+  )
+
   function nearestSameType(
     source: MapMarker,
   ): { marker: MapMarker; distanceMeters: number } | null {
@@ -128,6 +136,24 @@ export const useMapStore = defineStore('map', () => {
     selectedMarker.value = marker
   }
 
+  /** Toggle map-icon selection. Returns true if now selected, false if deselected. */
+  function toggleSelected(id: string): boolean {
+    if (selectedIds.has(id)) {
+      selectedIds.delete(id)
+      return false
+    }
+    selectedIds.add(id)
+    return true
+  }
+
+  function isSelected(id: string): boolean {
+    return selectedIds.has(id)
+  }
+
+  function clearSelected(): void {
+    selectedIds.clear()
+  }
+
   function setAllLayers(visible: boolean): void {
     for (const layer of checklist.layers) preferences.values.mapLayers[layer.id] = visible
   }
@@ -136,6 +162,8 @@ export const useMapStore = defineStore('map', () => {
     search,
     coordinates,
     selectedMarker,
+    selectedIds,
+    selectedMarkers,
     hoverText,
     camera,
     markers,
@@ -143,6 +171,9 @@ export const useMapStore = defineStore('map', () => {
     restoreCamera,
     saveCamera,
     showMarker,
+    toggleSelected,
+    isSelected,
+    clearSelected,
     nearestSameType,
     setAllLayers,
   }

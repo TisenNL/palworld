@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { api } from '@/services/api'
 import { gameToImage, imageToGame, mapProjection } from '@/domain/coordinates'
 import { LruCache } from '@/domain/lruCache'
@@ -8,6 +8,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 const props = defineProps<{
   markers: MapMarker[]
   camera: { x: number; y: number; scale: number }
+  selectedIds: Set<string>
 }>()
 
 const emit = defineEmits<{
@@ -303,6 +304,20 @@ function drawMarkers(context: CanvasRenderingContext2D, width: number, height: n
       context.fillStyle = '#fff'
       context.fillText(badge, bx, by + 0.5)
     }
+    // Selection ring: solid navy-blue fill + black border (drawn before hover ring)
+    if (props.selectedIds.has(marker.id)) {
+      context.beginPath()
+      context.strokeStyle = '#000'
+      context.lineWidth = 2.5
+      context.arc(point.x, point.y, size * 0.74, 0, Math.PI * 2)
+      context.stroke()
+      context.beginPath()
+      context.strokeStyle = '#1e3a8a'
+      context.lineWidth = 3.5
+      context.arc(point.x, point.y, size * 0.74, 0, Math.PI * 2)
+      context.stroke()
+    }
+    // Hover ring (outermost)
     if (hoverMarker?.id === marker.id) {
       context.beginPath()
       context.strokeStyle = '#fff'
@@ -488,6 +503,9 @@ defineExpose({ fitMarkers, centerGame, coordinatesAt, redraw: scheduleDraw })
 watch(() => [props.camera.x, props.camera.y, props.camera.scale, props.markers], scheduleDraw, {
   deep: false,
 })
+
+// Redraw when selection changes (deep watch needed because reactive Set mutates in place)
+watch(() => props.selectedIds, scheduleDraw, { deep: true })
 
 onMounted(() => {
   observer = new ResizeObserver(resize)

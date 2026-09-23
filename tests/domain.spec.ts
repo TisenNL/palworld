@@ -90,11 +90,30 @@ describe('ore clusters', () => {
 
 describe('cake calculator', () => {
   it('calculates purchases and the honey limit', () => {
-    const stock = { ...emptyStock, honey: 10 }
+    const stock = { ...emptyStock, flour: 5, honey: 10 }
     const result = calculateCakes(100_000, 0, cakeRecipes[0]!, stock, priceDefaults)
     expect(result.honeyCap).toBe(5)
     expect(result.maximum).toBe(5)
-    expect(result.purchases.wheat).toBe(75)
+    expect(result.wheatNeeded).toBe(0)
+    expect(result.purchases.wheat).toBeUndefined()
+  })
+
+  it('keeps flour and wheat independent and projects wheat for the target', () => {
+    const stock = {
+      ...emptyStock,
+      flour: 2,
+      berry: 40,
+      milk: 35,
+      egg: 40,
+      honey: 10,
+    }
+    const result = calculateCakes(0, 5, cakeRecipes[0]!, stock, priceDefaults)
+
+    expect(result.maximum).toBe(2)
+    expect(result.amount).toBe(2)
+    expect(result.shortfall).toBe(3)
+    expect(result.wheatNeeded).toBe(9)
+    expect(result.purchases.wheat).toBeUndefined()
   })
 
   it('uses inventory before spending gold', () => {

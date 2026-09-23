@@ -10,12 +10,20 @@ import type { CakeKey } from '@/domain/cakes'
 const cake = useCakeStore()
 const toast = useToast()
 
-const recipeMeta: Record<string, { tint: string; blurb: string }> = {
-  cake: { tint: '#fb7185', blurb: 'Classic ranch staple' },
-  mushroom: { tint: '#a3e635', blurb: 'Earthy dungeon bake' },
-  vegetable: { tint: '#4ade80', blurb: 'Garden fresh batch' },
-  extravagant: { tint: '#c084fc', blurb: 'Luxury veggie crown' },
-  special: { tint: '#fbbf24', blurb: 'Festival centerpiece' },
+const recipeMeta: Record<string, { tint: string; blurb: string; icon: string }> = {
+  cake: { tint: '#fb7185', blurb: 'Classic ranch staple', icon: '/cake-icons/cake.webp' },
+  mushroom: {
+    tint: '#a3e635',
+    blurb: 'Earthy dungeon bake',
+    icon: '/cake-icons/mushroom.webp',
+  },
+  vegetable: { tint: '#4ade80', blurb: 'Garden fresh batch', icon: '/cake-icons/vegetable.webp' },
+  extravagant: {
+    tint: '#c084fc',
+    blurb: 'Luxury veggie crown',
+    icon: '/cake-icons/extravagant.webp',
+  },
+  special: { tint: '#fbbf24', blurb: 'Festival centerpiece', icon: '/cake-icons/special.webp' },
 }
 
 const ingredientTint: Record<string, string> = {
@@ -37,10 +45,30 @@ const ingredientTint: Record<string, string> = {
   honey: '#f59e0b',
 }
 
+const ingredientIcon: Record<string, string> = {
+  berry: '/ingredient-icons/berry.webp',
+  milk: '/ingredient-icons/milk.webp',
+  egg: '/ingredient-icons/egg.webp',
+  tomato: '/ingredient-icons/tomato.webp',
+  lettuce: '/ingredient-icons/lettuce.webp',
+  mushroom: '/ingredient-icons/mushroom.webp',
+  cavern: '/ingredient-icons/cavern.webp',
+  cotton: '/ingredient-icons/cotton.webp',
+  potato: '/ingredient-icons/potato.webp',
+  onion: '/ingredient-icons/onion.webp',
+  carrot: '/ingredient-icons/carrot.webp',
+  caramel: '/ingredient-icons/caramel.webp',
+  mammorest: '/ingredient-icons/mammorest.webp',
+  wheat: '/ingredient-icons/wheat.webp',
+  flour: '/ingredient-icons/flour.webp',
+  honey: '/ingredient-icons/honey.webp',
+}
+
 interface MaterialCard {
   key: string
   label: string
   tint: string
+  icon: string
   badge: string
   priceKey?: CakeKey
   stockKey?: CakeKey
@@ -57,6 +85,7 @@ const materials = computed<MaterialCard[]>(() => {
       key: item.key,
       label: item.label,
       tint: ingredientTint[item.key] ?? '#67e8f9',
+      icon: ingredientIcon[item.key] ?? '/ingredient-icons/berry.webp',
       badge: `${item.per} / cake`,
       priceKey: item.price,
       stockKey: item.stock,
@@ -65,21 +94,21 @@ const materials = computed<MaterialCard[]>(() => {
       per: item.per,
     }
   })
-  const wheatBuy = cake.result.purchases.wheat ?? 0
+  const wheatBuy = cake.result.wheatNeeded
   cards.push({
     key: 'wheat',
     label: 'Wheat',
     tint: ingredientTint.wheat,
-    badge: 'for flour',
-    priceKey: 'wheat',
+    icon: ingredientIcon.wheat,
+    badge: 'to mill for goal',
     stockKey: 'wheat',
     buy: wheatBuy,
-    subtotal: cake.prices.wheat * wheatBuy,
   })
   cards.push({
     key: 'flour',
     label: 'Flour',
     tint: ingredientTint.flour,
+    icon: ingredientIcon.flour,
     badge: `${cake.recipe.flourPer} / cake`,
     stockKey: 'flour',
     per: cake.recipe.flourPer,
@@ -89,6 +118,7 @@ const materials = computed<MaterialCard[]>(() => {
       key: 'honey',
       label: 'Honey',
       tint: ingredientTint.honey,
+      icon: ingredientIcon.honey,
       badge: `${cake.recipe.honeyPer} / cake`,
       stockKey: 'honey',
       per: cake.recipe.honeyPer,
@@ -98,7 +128,12 @@ const materials = computed<MaterialCard[]>(() => {
 })
 
 const activeMeta = computed(
-  () => recipeMeta[cake.recipeId] ?? { tint: '#fbbf24', blurb: cake.recipe.label },
+  () =>
+    recipeMeta[cake.recipeId] ?? {
+      tint: '#fbbf24',
+      blurb: cake.recipe.label,
+      icon: '/cake-icons/cake.webp',
+    },
 )
 
 const fillRatio = computed(() => {
@@ -178,11 +213,7 @@ function applyPurchase(): void {
       <div class="scene-body">
         <section class="hero-card">
           <div class="cake-art" aria-hidden="true">
-            <div class="cake-plate" />
-            <div class="cake-layer bottom" />
-            <div class="cake-layer top" />
-            <div class="cake-icing" />
-            <div class="cake-cherry" />
+            <img :src="activeMeta.icon" :alt="`${cake.recipe.label} icon`" />
           </div>
 
           <div class="hero-copy">
@@ -197,6 +228,14 @@ function applyPurchase(): void {
             <p class="hero-cap">
               Maximum with current gold & stock:
               <b>{{ fmt(cake.result.maximum) }}</b>
+            </p>
+            <p v-if="cake.target > 0" class="hero-cap">
+              Missing for target:
+              <b>{{ fmt(cake.result.shortfall) }} cakes</b>
+            </p>
+            <p v-if="cake.target > 0" class="hero-cap">
+              Wheat to mill for target:
+              <b>{{ fmt(cake.result.wheatNeeded) }}</b>
             </p>
             <p class="hero-note">{{ cake.recipe.note }}</p>
           </div>
@@ -243,7 +282,9 @@ function applyPurchase(): void {
               :style="{ '--item-tint': card.tint }"
             >
               <header>
-                <span class="item-blob" />
+                <span class="item-blob">
+                  <img :src="card.icon" :alt="`${card.label} icon`" />
+                </span>
                 <div>
                   <strong>{{ card.label }}</strong>
                   <small>{{ card.badge }}</small>
@@ -465,57 +506,12 @@ function applyPurchase(): void {
   opacity: 0.95;
 }
 
-.cake-plate {
-  position: absolute;
-  left: 6px;
-  right: 6px;
-  bottom: 4px;
-  height: 10px;
-  border-radius: 999px;
-  background: radial-gradient(ellipse, #94a3b8, #334155 70%);
-  opacity: 0.55;
-}
-
-.cake-layer {
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  border-radius: 10px 10px 8px 8px;
-}
-
-.cake-layer.bottom {
-  bottom: 14px;
-  height: 22px;
-  background: linear-gradient(180deg, #fcd34d, #d97706);
-}
-
-.cake-layer.top {
-  bottom: 32px;
-  height: 20px;
-  background: linear-gradient(180deg, #fda4af, #fb7185);
-}
-
-.cake-icing {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 48px;
-  height: 10px;
-  border-radius: 999px;
-  background: #fff7ed;
-  box-shadow: 0 2px 0 #fecdd3;
-}
-
-.cake-cherry {
-  position: absolute;
-  left: 50%;
-  bottom: 54px;
-  width: 12px;
-  height: 12px;
-  margin-left: -6px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, #fda4af, #be123c);
-  box-shadow: 0 -8px 0 -5px #4ade80;
+.cake-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 12px color-mix(in srgb, var(--cake-tint) 30%, transparent));
 }
 
 .hero-copy {
@@ -739,13 +735,23 @@ function applyPurchase(): void {
 }
 
 .item-blob {
+  display: grid;
+  place-items: center;
   width: 28px;
   height: 28px;
+  overflow: hidden;
   border-radius: 10px;
   background:
     radial-gradient(circle at 30% 30%, #fff8, transparent 40%),
     var(--item-tint);
   box-shadow: 0 6px 14px color-mix(in srgb, var(--item-tint) 35%, transparent);
+}
+
+.item-blob img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .ingredient-card strong,

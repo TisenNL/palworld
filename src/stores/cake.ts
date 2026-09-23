@@ -115,7 +115,6 @@ export const useCakeStore = defineStore('cake', () => {
 
   function applyPurchase(): void {
     if (result.value.amount <= 0) return
-    stock.flour += Math.floor((result.value.purchases.wheat ?? 0) / 3)
     for (const item of recipe.value.ingredients) {
       stock[item.stock] += result.value.purchases[item.key] ?? 0
     }
