@@ -7,6 +7,7 @@ import { useChecklistStore } from './checklist'
 import { usePreferencesStore } from './preferences'
 
 const METERS_PER_MAP_COORDINATE = 4.59
+const SEARCH_MIN_LENGTH = 3
 
 export const useMapStore = defineStore('map', () => {
   const checklist = useChecklistStore()
@@ -74,18 +75,43 @@ export const useMapStore = defineStore('map', () => {
     })
   })
 
-  const searchResults = computed<MapMarker[]>(() => {
-    if (!checklist.data) return []
-    const query = search.value.trim().toLocaleLowerCase()
-    if (!query) return []
-    const output: MapMarker[] = []
-    for (const layer of checklist.layers) {
-      for (const item of layerItems(checklist.data, layer)) {
-        const marker = markerFor(layer, item)
-        const haystack = `${marker.label} ${item.name ?? ''} ${item.type ?? ''} ${item.x} ${item.y}`
-        if (!haystack.toLocaleLowerCase().includes(query)) continue
-        output.push(marker)
+  /**
+   * Search index built once when data loads. Haystack is pre-lowercased so
+   * each search query does not re-allocate strings. Does NOT call markerFor or
+   * read reactive checked state, so it only invalidates when raw data changes,
+   * not on every checkbox toggle.
+   */
+  const searchIndex = computed<Array<{ layer: MapLayer; item: CoordinateItem; haystack: string }>>(
+    () => {
+      if (!checklist.data) return []
+      const index: Array<{ layer: MapLayer; item: CoordinateItem; haystack: string }> = []
+      const seen = new Set<string>()
+      for (const layer of checklist.layers) {
+        for (const item of layerItems(checklist.data, layer)) {
+          const key = `${layer.id}:${item.id}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          const baseLabel =
+            layer.storage === 'effigies'
+              ? `${item.type ?? ''} effigy ${item.n ?? ''}`
+              : `${item.n ? `${item.n} ` : ''}${item.name ?? item.type ?? layer.label}`
+          const haystack =
+            `${baseLabel} ${item.name ?? ''} ${item.type ?? ''} ${item.x} ${item.y} ${layer.label}`.toLocaleLowerCase()
+          index.push({ layer, item, haystack })
+        }
       }
+      return index
+    },
+  )
+
+  const searchResults = computed<MapMarker[]>(() => {
+    const query = search.value.trim().toLocaleLowerCase()
+    if (query.length < SEARCH_MIN_LENGTH || !checklist.data) return []
+    const output: MapMarker[] = []
+    for (const entry of searchIndex.value) {
+      if (!entry.haystack.includes(query)) continue
+      // Only call markerFor (reads reactive checked state) for matched items.
+      output.push(markerFor(entry.layer, entry.item))
     }
     return output.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
   })

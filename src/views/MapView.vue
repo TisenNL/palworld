@@ -37,6 +37,14 @@ const popup = ref({ visible: false, x: 0, y: 0 })
 const mouseLoopSeconds = ref(40)
 let cameraTimer: number | undefined
 const markInGameRunning = ref(false)
+let searchDebounceTimer: number | undefined
+
+function setSearch(value: string): void {
+  window.clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = window.setTimeout(() => {
+    map.search = value
+  }, 180)
+}
 
 const visibleCount = computed(
   () => checklist.layers.filter((layer) => preferences.values.mapLayers[layer.id]).length,
@@ -51,7 +59,7 @@ const layerCounts = computed(() => {
 const nearestMarker = computed(() =>
   map.selectedMarker ? map.nearestSameType(map.selectedMarker) : null,
 )
-const searching = computed(() => map.search.trim().length > 0)
+const searching = computed(() => map.search.trim().length >= 3)
 const selectionCount = computed(() => map.selectedIds.size)
 
 function panelOpen(key: string, fallback = true): boolean {
@@ -386,7 +394,12 @@ void server.pollMouseLoop()
           :open="panelOpen('map-categories')"
           @update:open="setPanelOpen('map-categories', $event)"
         >
-          <InputText v-model="map.search" fluid placeholder="Procurar no mapa" />
+          <InputText
+            :model-value="map.search"
+            fluid
+            placeholder="Procurar no mapa"
+            @update:model-value="setSearch(String($event))"
+          />
           <template v-if="searching">
             <p class="search-meta">
               {{ map.searchResults.length.toLocaleString('pt-BR') }} resultado(s)
