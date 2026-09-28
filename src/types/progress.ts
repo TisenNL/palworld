@@ -35,6 +35,8 @@ export const mapCameraSchema = z.object({
 export const preferencesSchema = z.object({
   mapLayers: z.record(z.string(), z.boolean()).default({}),
   mapCam: mapCameraSchema.nullable().default(null),
+  wtMapCam: mapCameraSchema.nullable().default(null),
+  activeMap: z.enum(['palpagos', 'world-tree']).default('palpagos'),
   sidebarWidth: z.number().min(260).max(720).default(320),
   sidebarTransparency: z.number().min(0).max(100).default(26),
   sidebarCollapsed: z.boolean().default(false),

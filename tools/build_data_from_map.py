@@ -82,6 +82,25 @@ PER_PIXEL = 459.0
 INGAME_X_START = 1000.0 + (-582888.0 - LAND_MIN[0]) / PER_PIXEL
 INGAME_Y_START = 1000.0 + (-301000.0 - LAND_MIN[1]) / PER_PIXEL
 CLUSTER_LINK_DISTANCE = 3000.0
+
+# ── World Tree zone (separate coordinate space) ──────────────────────────────
+# Calibrated from: PER_PIXEL=459, ore center raw=(518050,-637535)
+# maps to in-game (~-200, 850). LAND_MIN back-calculated from that anchor.
+WT_LAND_MIN = (609850.0, -1027818.0)
+WT_PER_PIXEL = 459.0
+WT_OUT = ROOT / "public" / "wt-data.json"
+
+
+def wt_rpos_to_ipos(x: float, y: float) -> tuple[int, int]:
+    """Convert raw Unreal coords to World Tree in-game coords."""
+    ix = (x - WT_LAND_MIN[0]) / WT_PER_PIXEL
+    iy = (y - WT_LAND_MIN[1]) / WT_PER_PIXEL
+    return round(ix), round(iy)
+
+
+def wt_map_within(x: float, y: float) -> bool:
+    """Return True if raw Unreal coord is within World Tree bounds."""
+    return 390000.0 < x < 650000.0 and -770000.0 < y < -500000.0
 CLUSTER_NODE_TYPES = {
     "Ore Cluster": "Ore",
     "Coal Cluster": "Coal",
@@ -621,10 +640,95 @@ def build() -> dict:
     }
 
 
+def build_wt() -> dict:
+    """Build World Tree zone data from op.gg sources + hard-coded anchors."""
+
+    # ── Hard-coded fast travel points (from wiki.gg research) ────────────────
+    travel = [
+        {"id": "wt-spore-cloister",     "type": "Fast Travel", "name": "Spore Cloister",         "x": -35,   "y": 731},
+        {"id": "wt-canopy-crossroads",  "type": "Fast Travel", "name": "Canopy Crossroads",        "x": -59,   "y": 780},
+        {"id": "wt-verdant-boughs",     "type": "Fast Travel", "name": "Verdant Boughs",           "x": -120,  "y": 820},
+        {"id": "wt-shrouded-canopy",    "type": "Fast Travel", "name": "Shrouded Canopy",          "x": -200,  "y": 900},
+        {"id": "wt-hollowed-heartwood", "type": "Fast Travel", "name": "Hollowed Heartwood",       "x": -500,  "y": 1050},
+        {"id": "wt-ashen-roots",        "type": "Fast Travel", "name": "Ashen Roots",              "x": -900,  "y": 1150},
+        {"id": "wt-crystalline-grove",  "type": "Fast Travel", "name": "Crystalline Grove",        "x": -1200, "y": 1200},
+        {"id": "wt-lifeglow-terrace",   "type": "Fast Travel", "name": "Lifeglow Terrace",         "x": -1500, "y": 1300},
+        {"id": "wt-sealed-sanctum",     "type": "Fast Travel", "name": "Sealed Sanctum",           "x": -1979, "y": 1361},
+    ]
+
+    # ── Hard-coded alpha pals (from allthings.how + wiki.gg) ─────────────────
+    alphas = [
+        {"id": "mycora-wt",        "lv": 75, "name": "Mycora",        "x": -35,  "y": 731},
+        {"id": "aegidron-wt",      "lv": 75, "name": "Aegidron",      "x": -59,  "y": 756},
+        {"id": "celesdir-noct-wt", "lv": 75, "name": "Celesdir Noct", "x": -60,  "y": 777},
+        {"id": "moldron-cryst-wt", "lv": 75, "name": "Moldron Cryst", "x": -64,  "y": 816},
+        {"id": "renjishi-wt",      "lv": 75, "name": "Renjishi",      "x":  56,  "y": 838},
+    ]
+
+    # ── Collectibles from op.gg (ores + eggs) ────────────────────────────────
+    collectibles = []
+
+    # World Tree Ore
+    mine_data = load_opgg_group("mine")
+    mine_points = mine_data.get("points") or {}
+    for pt in opgg_points_wt(mine_points, "WorldTreeOre"):
+        collectibles.append({
+            "id": slug(f"world-tree-ore-{pt['x']}_{pt['y']}"),
+            "type": "World Tree Ore",
+            "name": "World Tree Ore",
+            "x": pt["x"],
+            "y": pt["y"],
+        })
+
+    # World Tree Eggs
+    eggs_data = load_opgg_group("eggs")
+    eggs_points = eggs_data.get("points") or {}
+    for pt in opgg_points_wt(eggs_points, "Eggs", tag_filter="worldTree"):
+        collectibles.append({
+            "id": slug(f"egg-world-tree-{pt['x']}_{pt['y']}"),
+            "type": "Egg (World Tree)",
+            "name": "Egg (World Tree)",
+            "x": pt["x"],
+            "y": pt["y"],
+        })
+
+    # Deduplicate collectibles
+    seen: set[tuple] = set()
+    deduped = []
+    for c in collectibles:
+        key = (c["type"], c["x"], c["y"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(c)
+    collectibles = sorted(deduped, key=lambda c: (c["type"], c["x"], c["y"]))
+
+    return {"alphas": alphas, "travel": travel, "collectibles": collectibles}
+
+
+def opgg_points_wt(points: dict, key: str, tag_filter: str | None = None) -> list[dict]:
+    """Extract OP.GG points that fall within the World Tree raw coord bounds."""
+    out = []
+    for row in points.get(key) or []:
+        if tag_filter and str(row.get("t") or row.get("tag") or "") != tag_filter:
+            continue
+        loc = row.get("l") or []
+        if len(loc) < 2:
+            continue
+        rx, ry = float(loc[0]), float(loc[1])
+        if not wt_map_within(rx, ry):
+            continue
+        x, y = wt_rpos_to_ipos(rx, ry)
+        out.append({"x": x, "y": y})
+    return out
+
+
 def main() -> int:
     data = build()
     OUT.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print("Wrote", OUT, {k: len(v) for k, v in data.items()})
+    wt_data = build_wt()
+    WT_OUT.write_text(json.dumps(wt_data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print("Wrote", WT_OUT, {k: len(v) for k, v in wt_data.items()})
     return 0
 
 

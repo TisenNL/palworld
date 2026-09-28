@@ -13,6 +13,7 @@ const items = [
   { route: '/map', label: 'Map', icon: 'pi pi-map' },
   { route: '/cakes', label: 'Cakes', icon: 'pi pi-calculator' },
   { route: '/breeding', label: 'Breeding', icon: 'pi pi-sitemap' },
+  { route: '/base-boost', label: 'Base Boost', icon: 'pi pi-star' },
 ]
 
 const isActive = (path: string): boolean => route.path === path

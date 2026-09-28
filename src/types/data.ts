@@ -93,3 +93,13 @@ export interface MapMarker {
   iconUrl?: string
   done: boolean
 }
+
+// ── World Tree zone data ──────────────────────────────────────────────────────
+
+export const wtDataSchema = z.object({
+  alphas:      z.array(coordinateSchema),
+  travel:      z.array(coordinateSchema),
+  collectibles: z.array(coordinateSchema),
+})
+
+export type WtData = z.infer<typeof wtDataSchema>

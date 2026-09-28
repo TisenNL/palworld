@@ -5,7 +5,7 @@ import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
 import Slider from 'primevue/slider'
 import { useToast } from 'primevue/usetoast'
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import SafeImage from '@/components/common/SafeImage.vue'
@@ -362,6 +362,11 @@ async function toggleMouseLoop(): Promise<void> {
 
 function setAll(visible: boolean): void {
   map.setAllLayers(visible)
+  // When showing all layers, re-fit the camera so every marker is visible —
+  // the saved camera position may be stale or outside the current marker bounds.
+  if (visible) {
+    void nextTick(() => canvas.value?.fitMarkers())
+  }
 }
 
 function toggleSidebar(): void {
@@ -380,6 +385,8 @@ function toggleSearchResultDone(marker: MapMarker, done: boolean): void {
 }
 
 map.restoreCamera()
+// Pre-load WT data so first switch to World Tree is instant
+void map.loadWtData()
 void server.pollGameMarker()
 void server.pollMouseLoop()
 </script>
@@ -389,6 +396,26 @@ void server.pollMouseLoop()
     <h1 class="sr-only">Interactive map</h1>
     <aside class="sidebar map-sidebar" :aria-hidden="preferences.values.sidebarCollapsed">
       <div class="sidebar-scroll">
+        <!-- ── Map selector ── -->
+        <div class="map-selector">
+          <button
+            class="map-btn"
+            :class="{ active: map.activeMap === 'palpagos' }"
+            @click="map.setActiveMap('palpagos')"
+          >
+            <i class="pi pi-map" aria-hidden="true" />
+            Palpagos
+          </button>
+          <button
+            class="map-btn"
+            :class="{ active: map.activeMap === 'world-tree' }"
+            @click="map.setActiveMap('world-tree')"
+          >
+            <i class="pi pi-sparkles" aria-hidden="true" />
+            World Tree
+          </button>
+        </div>
+
         <CompactPanel
           title="Categories"
           :open="panelOpen('map-categories')"
@@ -634,8 +661,9 @@ void server.pollMouseLoop()
     <section class="map-stage" @click.self="popup.visible = false">
       <MapCanvas
         ref="canvas"
-        :markers="map.markers"
+        :markers="map.activeMap === 'world-tree' ? map.wtMarkers : map.markers"
         :camera="map.camera"
+        :map-zone="map.activeMap"
         :selected-ids="map.selectedIds"
         @camera-change="updateCamera"
         @select="handleSelect"
@@ -711,8 +739,42 @@ void server.pollMouseLoop()
   gap: 6px;
 }
 
-.quick-actions {
+.map-selector {
   display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px 10px 4px;
+}
+
+.map-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.map-btn:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.map-btn.active {
+  background: linear-gradient(135deg, #0ea5e9, #4f46e5);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.24);
+}
+
+.quick-actions {  display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 5px;
   margin: 5px 0;

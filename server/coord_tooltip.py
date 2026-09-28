@@ -63,6 +63,12 @@ MAPGENIE_TILE_BASE = "https://tiles.mapgenie.io/games/palworld/1-0/default-v1"
 MAPGENIE_MIN_Z = 8
 MAPGENIE_MAX_Z = 16
 TILE_DISK = PROJECT_ROOT / ".cache" / "map-tiles"
+
+# MapGenie World Tree, pyramid z8-z14
+MAPGENIE_WT_TILE_BASE = "https://tiles.mapgenie.io/games/palworld/world-tree/default-v1"
+MAPGENIE_WT_MIN_Z = 8
+MAPGENIE_WT_MAX_Z = 14
+WT_TILE_DISK = PROJECT_ROOT / ".cache" / "map-tiles-wt"
 ICON_DISK = PROJECT_ROOT / ".cache" / "map-icons"
 BUNDLED_ICON_DISK = Path(__file__).resolve().parent / "static" / "map-icons"
 ICON_ALLOWED_HOSTS = {"cdn.paldb.cc"}
@@ -995,6 +1001,30 @@ def fetch_tile_bytes(z: int, tx: int, ty: int) -> bytes:
     return data
 
 
+def fetch_wt_tile_bytes(z: int, tx: int, ty: int) -> bytes:
+    """Fetch a World Tree map tile from MapGenie."""
+    z = max(MAPGENIE_WT_MIN_Z, min(MAPGENIE_WT_MAX_Z, int(z)))
+    n = 1 << z
+    tx = max(0, min(n - 1, int(tx)))
+    ty = max(0, min(n - 1, int(ty)))
+    key = ("wt", z, tx, ty)
+    cached = TILE_BYTES_CACHE.get(key)
+    if cached is not None:
+        return cached
+    path = WT_TILE_DISK / f"z{z}" / f"{tx}_{ty}.jpg"
+    if path.is_file() and path.stat().st_size > 64:
+        data = path.read_bytes()
+        TILE_BYTES_CACHE[key] = data
+        return data
+    url = f"{MAPGENIE_WT_TILE_BASE}/{z}/{tx}/{ty}.jpg"
+    data = _http_get_bytes(url, "https://mapgenie.io/palworld/maps/world-tree")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if len(data) > 800:
+        path.write_bytes(data)
+    TILE_BYTES_CACHE[key] = data
+    return data
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print("[http]", fmt % args, flush=True)
@@ -1101,8 +1131,9 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 self._json(400, {"ok": False, "error": "params"})
                 return
+            use_wt = qs.get("map", [""])[0] == "wt"
             try:
-                data = fetch_tile_bytes(z, tx, ty)
+                data = fetch_wt_tile_bytes(z, tx, ty) if use_wt else fetch_tile_bytes(z, tx, ty)
             except Exception as exc:
                 print(f"map-tile error: {exc}", flush=True)
                 self._json(502, {"ok": False, "error": str(exc)})

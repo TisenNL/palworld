@@ -1,8 +1,9 @@
 ﻿import { defineStore } from 'pinia'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, shallowRef } from 'vue'
 
 import { layerItems } from '@/domain/layers'
-import type { CoordinateItem, MapLayer, MapMarker } from '@/types/data'
+import { api } from '@/services/api'
+import type { CoordinateItem, MapLayer, MapMarker, WtData } from '@/types/data'
 import { useChecklistStore } from './checklist'
 import { usePreferencesStore } from './preferences'
 
@@ -17,6 +18,7 @@ export const useMapStore = defineStore('map', () => {
   const selectedMarker = ref<MapMarker | null>(null)
   const hoverText = ref('')
   const camera = reactive({ x: 0, y: 0, scale: 0.05 })
+  const wtData = shallowRef<WtData | null>(null)
 
   // Multi-selection: reactive Set so .has() / .size triggers computed updates
   const selectedIds = reactive(new Set<string>())
@@ -147,7 +149,25 @@ export const useMapStore = defineStore('map', () => {
 
   function restoreCamera(): void {
     const saved = preferences.values.mapCam
-    if (saved) Object.assign(camera, { x: saved.ix, y: saved.iy, scale: saved.scaleCss })
+    if (!saved) return
+    // Sanity-check: camera x/y are screen-space offsets. If the stored values
+    // would place the map entirely off-screen at the saved scale, discard them
+    // and let fitMarkers() centre the view instead.
+    const { ix: x, iy: y, scaleCss: scale } = saved
+    if (
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      !Number.isFinite(scale) ||
+      scale <= 0 ||
+      // The map image is ~16M px wide; at minimum scale 0.004 that's ~65k screen px.
+      // Any offset beyond ±200k is clearly stale/corrupt.
+      Math.abs(x) > 200_000 ||
+      Math.abs(y) > 200_000
+    ) {
+      preferences.values.mapCam = null
+      return
+    }
+    Object.assign(camera, { x, y, scale })
   }
 
   function saveCamera(): void {
@@ -184,6 +204,87 @@ export const useMapStore = defineStore('map', () => {
     for (const layer of checklist.layers) preferences.values.mapLayers[layer.id] = visible
   }
 
+  // ── World Tree ──────────────────────────────────────────────────────────────
+
+  const activeMap = computed(() => preferences.values.activeMap)
+
+  async function loadWtData(): Promise<void> {
+    if (wtData.value) return
+    try {
+      wtData.value = await api.getWtData()
+    } catch {
+      // non-fatal — WT map simply shows no markers if unavailable
+    }
+  }
+
+  /** Flat list of all WT markers (read-only, no checkboxes for now). */
+  const wtMarkers = computed<MapMarker[]>(() => {
+    const data = wtData.value
+    if (!data) return []
+    const out: MapMarker[] = []
+
+    const push = (storage: 'alphas' | 'travel' | 'collectibles', color: string) => {
+      for (const item of data[storage]) {
+        const label = item.name ?? item.type ?? storage
+        out.push({
+          id: `wt:${storage}:${item.id}`,
+          layerId: `wt-${storage}`,
+          storage,
+          item,
+          label,
+          color,
+          done: false,
+        })
+      }
+    }
+
+    push('alphas',      '#34d399')
+    push('travel',      '#22d3ee')
+    push('collectibles','#a78bfa')
+
+    return out
+  })
+
+  function saveWtCamera(): void {
+    preferences.values.wtMapCam = { ix: camera.x, iy: camera.y, scaleCss: camera.scale }
+  }
+
+  function restoreWtCamera(): void {
+    const saved = preferences.values.wtMapCam
+    if (!saved) return
+    const { ix: x, iy: y, scaleCss: scale } = saved
+    if (
+      !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale) ||
+      scale <= 0 || Math.abs(x) > 200_000 || Math.abs(y) > 200_000
+    ) {
+      preferences.values.wtMapCam = null
+      return
+    }
+    Object.assign(camera, { x, y, scale })
+  }
+
+  function setActiveMap(map: 'palpagos' | 'world-tree'): void {
+    if (preferences.values.activeMap === map) return
+    // Save current camera before switching
+    if (preferences.values.activeMap === 'world-tree') {
+      saveWtCamera()
+    } else {
+      saveCamera()
+    }
+    // Reset camera to default so fitMarkers() fires on mount
+    Object.assign(camera, { x: 0, y: 0, scale: 0.05 })
+    preferences.values.activeMap = map
+    // Restore saved camera for the new map
+    if (map === 'world-tree') {
+      restoreWtCamera()
+      void loadWtData()
+    } else {
+      restoreCamera()
+    }
+    // Clear selection when switching maps
+    selectedIds.clear()
+  }
+
   return {
     search,
     coordinates,
@@ -193,6 +294,8 @@ export const useMapStore = defineStore('map', () => {
     hoverText,
     camera,
     markers,
+    wtMarkers,
+    activeMap,
     searchResults,
     restoreCamera,
     saveCamera,
@@ -202,5 +305,7 @@ export const useMapStore = defineStore('map', () => {
     clearSelected,
     nearestSameType,
     setAllLayers,
+    setActiveMap,
+    loadWtData,
   }
 })

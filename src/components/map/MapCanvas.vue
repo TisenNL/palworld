@@ -1,6 +1,7 @@
 ﻿<script setup lang="ts">
 import { api } from '@/services/api'
 import { gameToImage, imageToGame, mapProjection } from '@/domain/coordinates'
+import { wtGameToImage, wtImageToGame, wtProjection } from '@/domain/worldTreeCoordinates'
 import { LruCache } from '@/domain/lruCache'
 import type { MapMarker } from '@/types/data'
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -9,6 +10,7 @@ const props = defineProps<{
   markers: MapMarker[]
   camera: { x: number; y: number; scale: number }
   selectedIds: Set<string>
+  mapZone: 'palpagos' | 'world-tree'
 }>()
 
 const emit = defineEmits<{
@@ -42,6 +44,22 @@ let lastY = 0
 let hoverMarker: MapMarker | null = null
 
 const clampScale = (value: number): number => Math.max(0.004, Math.min(1, value))
+
+function activeProjection() {
+  return props.mapZone === 'world-tree' ? wtProjection : mapProjection
+}
+
+function activeGameToImage(x: number, y: number) {
+  return props.mapZone === 'world-tree' ? wtGameToImage(x, y) : gameToImage(x, y)
+}
+
+function activeImageToGame(x: number, y: number) {
+  return props.mapZone === 'world-tree' ? wtImageToGame(x, y) : imageToGame(x, y)
+}
+
+function activeTileUrl(z: number, tx: number, ty: number): string {
+  return props.mapZone === 'world-tree' ? api.mapTileUrlWt(z, tx, ty) : api.mapTileUrl(z, tx, ty)
+}
 
 function updateCamera(next: { x: number; y: number; scale: number }): void {
   emit('cameraChange', next)
@@ -89,7 +107,7 @@ function requestTile(z: number, x: number, y: number): void {
   )
     return
   tileLoading.add(key)
-  tileQueue.push({ key, url: api.mapTileUrl(z, x, y) })
+  tileQueue.push({ key, url: activeTileUrl(z, x, y) })
   pumpTiles()
 }
 
@@ -211,12 +229,13 @@ function pumpIcons(): void {
 }
 
 function drawTiles(context: CanvasRenderingContext2D, width: number, height: number): void {
-  const ideal = mapProjection.worldZoom + Math.log2(props.camera.scale)
+  const proj = activeProjection()
+  const ideal = proj.worldZoom + Math.log2(props.camera.scale)
   const zoom = Math.max(
-    mapProjection.minTileZoom,
-    Math.min(mapProjection.maxTileZoom, Math.round(ideal)),
+    proj.minTileZoom,
+    Math.min(proj.maxTileZoom, Math.round(ideal)),
   )
-  const worldPerTile = mapProjection.tileSize * 2 ** (mapProjection.worldZoom - zoom)
+  const worldPerTile = proj.tileSize * 2 ** (proj.worldZoom - zoom)
   const minX = Math.max(0, Math.floor(-props.camera.x / props.camera.scale / worldPerTile) - 1)
   const minY = Math.max(0, Math.floor(-props.camera.y / props.camera.scale / worldPerTile) - 1)
   const maxIndex = 2 ** zoom - 1
@@ -230,7 +249,7 @@ function drawTiles(context: CanvasRenderingContext2D, width: number, height: num
   )
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
-      const key = `${zoom}/${x}/${y}`
+      const key = `${props.mapZone}/${zoom}/${x}/${y}`
       const image = tileCache.get(key)
       const dx = props.camera.x + x * worldPerTile * props.camera.scale
       const dy = props.camera.y + y * worldPerTile * props.camera.scale
@@ -246,7 +265,7 @@ function drawTiles(context: CanvasRenderingContext2D, width: number, height: num
 }
 
 function markerPosition(marker: MapMarker): { x: number; y: number } {
-  const image = gameToImage(marker.item.x, marker.item.y)
+  const image = activeGameToImage(marker.item.x, marker.item.y)
   return {
     x: props.camera.x + image.x * props.camera.scale,
     y: props.camera.y + image.y * props.camera.scale,
@@ -372,7 +391,7 @@ function emitCursorStatus(
 ): void {
   const imageX = (screenX - camera.x) / camera.scale
   const imageY = (screenY - camera.y) / camera.scale
-  const game = imageToGame(imageX, imageY)
+  const game = activeImageToGame(imageX, imageY)
   const x = Math.round(game.x)
   const y = Math.round(game.y)
   const coords = `Centered on (${x}, ${y})`
@@ -466,7 +485,7 @@ function cameraIntersectsMarkerBounds(): boolean {
 function fitMarkers(): void {
   if (!props.markers.length) return
   const { width, height } = viewport()
-  const points = props.markers.map((marker) => gameToImage(marker.item.x, marker.item.y))
+  const points = props.markers.map((marker) => activeGameToImage(marker.item.x, marker.item.y))
   const minX = Math.min(...points.map((point) => point.x))
   const maxX = Math.max(...points.map((point) => point.x))
   const minY = Math.min(...points.map((point) => point.y))
@@ -482,7 +501,7 @@ function fitMarkers(): void {
 
 function centerGame(x: number, y: number): void {
   const { width, height } = viewport()
-  const point = gameToImage(x, y)
+  const point = activeGameToImage(x, y)
   updateCamera({
     x: width / 2 - point.x * props.camera.scale,
     y: height / 2 - point.y * props.camera.scale,
@@ -492,7 +511,7 @@ function centerGame(x: number, y: number): void {
 }
 
 function coordinatesAt(x: number, y: number): { x: number; y: number } {
-  return imageToGame(
+  return activeImageToGame(
     (x - props.camera.x) / props.camera.scale,
     (y - props.camera.y) / props.camera.scale,
   )
@@ -500,7 +519,7 @@ function coordinatesAt(x: number, y: number): { x: number; y: number } {
 
 defineExpose({ fitMarkers, centerGame, coordinatesAt, redraw: scheduleDraw })
 
-watch(() => [props.camera.x, props.camera.y, props.camera.scale, props.markers], scheduleDraw, {
+watch(() => [props.camera.x, props.camera.y, props.camera.scale, props.markers, props.mapZone], scheduleDraw, {
   deep: false,
 })
 

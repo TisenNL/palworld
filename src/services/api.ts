@@ -4,9 +4,11 @@ import {
   breedDataSchema,
   gameDataSchema,
   mapIconsSchema,
+  wtDataSchema,
   type BreedData,
   type GameData,
   type MapIconsData,
+  type WtData,
 } from '@/types/data'
 import { progressSchema, type ProgressPayload } from '@/types/progress'
 import {
@@ -58,6 +60,7 @@ async function json<T>(path: string, schema: ZodType<T>, init?: RequestInit): Pr
 
 export const api = {
   getData: (): Promise<GameData> => json('/data.json', gameDataSchema, { cache: 'no-store' }),
+  getWtData: (): Promise<WtData> => json('/wt-data.json', wtDataSchema, { cache: 'no-store' }),
   getBreedData: (): Promise<BreedData> => json('/breed.json', breedDataSchema),
   getMapIcons: (): Promise<MapIconsData> => json('/map_icons.json', mapIconsSchema),
   getProgress: (): Promise<ProgressPayload> =>
@@ -110,5 +113,7 @@ export const api = {
     json('/mouse-loop/state', mouseLoopStateSchema, { cache: 'no-store' }),
   mapTileUrl: (z: number, x: number, y: number): string =>
     `${apiBase}/map-tile?z=${z}&x=${x}&y=${y}`,
+  mapTileUrlWt: (z: number, x: number, y: number): string =>
+    `${apiBase}/map-tile?z=${z}&x=${x}&y=${y}&map=wt`,
   mapIconUrl: (source: string): string => `${apiBase}/map-icon?src=${encodeURIComponent(source)}`,
 }

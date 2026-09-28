@@ -24,6 +24,11 @@ export const router = createRouter({
       name: 'breed',
       component: () => import('@/views/BreedingView.vue'),
     },
+    {
+      path: '/base-boost',
+      name: 'base-boost',
+      component: () => import('@/views/BaseBoostView.vue'),
+    },
     { path: '/:pathMatch(.*)*', redirect: '/map' },
   ],
 })

@@ -1,0 +1,32 @@
+Game marker calibration: {'W': [0, -5], 'D': [5, 0], 'S': [0, 5], 'A': [-5, 0]}
+Game marker calibration: {'W': [0, -5], 'D': [5, 0], 'S': [0, 5], 'A': [-5, 0]}
+Game marker calibration: {'W': [0.0, -5.0], 'A': [-5.0, 0.0], 'S': [0.0, 5.0], 'D': [5.0, 0.0]}
+[marker] mouse vectors cached for next run: ((1.0, 0.0), (0.0, 1.0))
+Game marker calibration: {'W': [0.0, -8.0], 'A': [-8.0, 0.0], 'S': [0.0, 8.0], 'D': [8.0, 0.0]}
+[marker] mouse vectors cached for next run: ((1.0, 0.0), (0.0, 1.0))
+[marker] mouse cache miss (not yet calibrated)
+Game marker calibration: {'W': [0.0, -8.0], 'S': [0.0, 8.0], 'D': [8.0, 0.0], 'A': [-8.0, 0.0]}
+Game marker calibration: {'W': [0.0, -5.0], 'A': [-5.0, 0.0], 'S': [0.0, 5.0], 'D': [5.0, 0.0]}
+[marker] mouse vectors cached for next run: ((1.0, 0.0), (0.0, 1.0))
+Game marker calibration: {'W': [0.0, -5.0], 'A': [-5.0, 0.0], 'S': [0.0, 5.0], 'D': [5.0, 0.0]}
+Game marker calibration: {'W': [0.0, -8.0], 'A': [-8.0, 0.0], 'S': [0.0, 8.0], 'D': [8.0, 0.0]}
+[marker] mouse vectors cached for next run: ((1.0, 0.0), (0.0, 1.0))
+[marker] mouse cache hit (memory, light)
+Game marker calibration: {'W': [0.0, -8.0], 'S': [0.0, 8.0], 'D': [8.0, 0.0], 'A': [-8.0, 0.0]}
+[marker] mouse vectors cached for next run: ((1.0, 0.0), (0.0, 1.0))
+Game marker calibration: {'W': [0.0, -5.0], 'A': [-5.0, 0.0], 'S': [0.0, 5.0], 'D': [5.0, 0.0]}
+[marker] mouse vectors cached for next run: ((1.0, 0.0), (0.0, 1.0))
+[marker] mouse cache hit (memory, light)
+Game marker calibration: {'W': [0.0, -5.0], 'A': [-5.0, 0.0], 'S': [0.0, 5.0], 'D': [5.0, 0.0]}
+[marker] mouse vectors cached for next run: ((1.0, 0.0), (0.0, 1.0))
+Game marker calibration: {'W': [0, -5], 'D': [5, 0], 'S': [0, 5], 'A': [-5, 0]}
+[marker] mouse vectors cached for next run: ((1.0, 0.0), (0.0, 1.0))
+[marker] mouse cache miss (not yet calibrated)
+Game marker calibration: {'W': [0.0, -0.01], 'S': [0.0, 0.01], 'D': [0.01, 0.0], 'A': [-0.01, 0.0]}
+Game marker calibration: {'W': [0, -5], 'D': [5, 0], 'S': [0, 5], 'A': [-5, 0]}
+[marker] mouse vectors cached for next run: ((1.0, 0.0), (0.0, 1.0))
+[marker-timing] phases_ms={calibration=1.0, calibration_mouse=0.0, focus=0.0, initial_read=0.0, loop=108.4} sleep_ms={calibration=80.0, calibration_mouse=160.0, focus=40.0, initial_read=80.0, loop=40.0, other=270.0} ocr_reads=20 loop_iters=5 total_phase_ms=109.4 jsonl=.cache/timing/run-20260927-054114-14000.jsonl
+[timing-collector] wrote run-20260927-054114-14000.jsonl
+[marker] mouse cache miss (not yet calibrated)
+Game marker calibration: {'W': [0.0, -8.0], 'S': [0.0, 8.0], 'D': [8.0, 0.0], 'A': [-8.0, 0.0]}
+[marker] mouse vectors cached for next run: ((1.0, 0.0), (0.0, 1.0))

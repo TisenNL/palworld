@@ -1071,20 +1071,20 @@ class GameMarkerController:
                         reused_calibration = True
                         self.timing.add_calibration("wasd_disk", reused_disk=True)
                         if disk_mouse is not None and OPT_MOUSE_CACHE:
-                            if OPT_LIGHT_CALIBRATION:
+                            # Disk cache is always validated — it may be stale across sessions.
+                            # OPT_LIGHT_CALIBRATION only skips validation for in-memory cache
+                            # (already verified this session).
+                            ok_mouse, current = self._validate_cached_mouse(
+                                disk_mouse,
+                                current,
+                                selection_box,
+                                selection_point,
+                                started,
+                            )
+                            if ok_mouse:
                                 mouse_vectors = disk_mouse
                             else:
-                                ok_mouse, current = self._validate_cached_mouse(
-                                    disk_mouse,
-                                    current,
-                                    selection_box,
-                                    selection_point,
-                                    started,
-                                )
-                                if ok_mouse:
-                                    mouse_vectors = disk_mouse
-                                else:
-                                    self._discard_mouse_cache()
+                                self._discard_mouse_cache()
                         self.update_state(message="Using disk WASD calibration")
                     else:
                         invalidate_calibration_cache(self._cache_key)
