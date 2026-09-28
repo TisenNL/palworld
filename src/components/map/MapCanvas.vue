@@ -98,7 +98,7 @@ function viewport(): { width: number; height: number; dpr: number } {
 }
 
 function requestTile(z: number, x: number, y: number): void {
-  const key = `${z}/${x}/${y}`
+  const key = `${props.mapZone}/${z}/${x}/${y}`
   const failure = failedTiles.get(key)
   if (
     tileCache.has(key) ||
@@ -519,7 +519,15 @@ function coordinatesAt(x: number, y: number): { x: number; y: number } {
 
 defineExpose({ fitMarkers, centerGame, coordinatesAt, redraw: scheduleDraw })
 
-watch(() => [props.camera.x, props.camera.y, props.camera.scale, props.markers, props.mapZone], scheduleDraw, {
+watch(() => [props.camera.x, props.camera.y, props.camera.scale, props.markers, props.mapZone], (newVal, oldVal) => {
+  // Clear tile cache when switching maps to avoid showing wrong tiles
+  if (Array.isArray(oldVal) && Array.isArray(newVal) && oldVal[4] !== newVal[4]) {
+    tileCache.clear()
+    failedTiles.clear()
+    hasVisibleTile.value = false
+  }
+  scheduleDraw()
+}, {
   deep: false,
 })
 
