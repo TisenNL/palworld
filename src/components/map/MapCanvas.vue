@@ -43,7 +43,7 @@ let lastX = 0
 let lastY = 0
 let hoverMarker: MapMarker | null = null
 
-const clampScale = (value: number): number => Math.max(0.004, Math.min(1, value))
+const clampScale = (value: number): number => Math.max(0.0005, Math.min(1, value))
 
 function activeProjection() {
   return props.mapZone === 'world-tree' ? wtProjection : mapProjection
@@ -117,7 +117,8 @@ function pumpTiles(): void {
     activeTiles++
     const controller = new AbortController()
     controllers.add(controller)
-    void fetch(item.url, { signal: controller.signal })
+    // no-store: bypass HTTP cache — old builds served bad tiles under these same URLs
+    void fetch(item.url, { signal: controller.signal, cache: 'no-store' })
       .then((response) => {
         if (!response.ok) throw new Error(`Tile ${response.status}`)
         return response.blob()

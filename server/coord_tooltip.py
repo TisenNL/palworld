@@ -59,12 +59,15 @@ CHECK_KEYS = (
 )
 
 # MapGenie Palpagos 1.0, pyramid z8-z16
+# OFFLINE MODE: tiles served from local cache only (.cache/map-tiles/)
+# Run tools/download_map_tiles.py to populate the cache.
 MAPGENIE_TILE_BASE = "https://tiles.mapgenie.io/games/palworld/1-0/default-v1"
 MAPGENIE_MIN_Z = 8
 MAPGENIE_MAX_Z = 16
 TILE_DISK = PROJECT_ROOT / ".cache" / "map-tiles"
 
 # MapGenie World Tree, pyramid z8-z14
+# OFFLINE MODE: tiles served from local cache only (.cache/map-tiles-wt/)
 MAPGENIE_WT_TILE_BASE = "https://tiles.mapgenie.io/games/palworld/world-tree/default-v1"
 MAPGENIE_WT_MIN_Z = 8
 MAPGENIE_WT_MAX_Z = 14
@@ -978,7 +981,7 @@ def fetch_map_icon_bytes(url: str) -> bytes:
 
 
 def fetch_tile_bytes(z: int, tx: int, ty: int) -> bytes:
-    """Fetch a map tile from MapGenie 1.0."""
+    """Fetch a map tile from local cache (OFFLINE MODE)."""
     z = max(MAPGENIE_MIN_Z, min(MAPGENIE_MAX_Z, int(z)))
     n = 1 << z
     tx = max(0, min(n - 1, int(tx)))
@@ -992,17 +995,15 @@ def fetch_tile_bytes(z: int, tx: int, ty: int) -> bytes:
         data = path.read_bytes()
         TILE_BYTES_CACHE[key] = data
         return data
-    url = f"{MAPGENIE_TILE_BASE}/{z}/{tx}/{ty}.jpg"
-    data = _http_get_bytes(url, "https://mapgenie.io/palworld/maps/palpagos-islands")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if len(data) > 800:
-        path.write_bytes(data)
+    # OFFLINE MODE: return blank tile instead of fetching from network
+    print(f"[tile] missing: z{z}/{tx}_{ty} — run tools/download_map_tiles.py", flush=True)
+    data = _blank_tile_jpeg()
     TILE_BYTES_CACHE[key] = data
     return data
 
 
 def fetch_wt_tile_bytes(z: int, tx: int, ty: int) -> bytes:
-    """Fetch a World Tree map tile from MapGenie."""
+    """Fetch a World Tree map tile from local cache (OFFLINE MODE)."""
     z = max(MAPGENIE_WT_MIN_Z, min(MAPGENIE_WT_MAX_Z, int(z)))
     n = 1 << z
     tx = max(0, min(n - 1, int(tx)))
@@ -1016,11 +1017,9 @@ def fetch_wt_tile_bytes(z: int, tx: int, ty: int) -> bytes:
         data = path.read_bytes()
         TILE_BYTES_CACHE[key] = data
         return data
-    url = f"{MAPGENIE_WT_TILE_BASE}/{z}/{tx}/{ty}.jpg"
-    data = _http_get_bytes(url, "https://mapgenie.io/palworld/maps/world-tree")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if len(data) > 800:
-        path.write_bytes(data)
+    # OFFLINE MODE: return blank tile instead of fetching from network
+    print(f"[tile-wt] missing: z{z}/{tx}_{ty} — run tools/download_map_tiles.py", flush=True)
+    data = _blank_tile_jpeg()
     TILE_BYTES_CACHE[key] = data
     return data
 
@@ -1122,7 +1121,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, load_progress_file())
             return
 
-        if parsed.path.startswith("/map-tile"):
+        if parsed.path == "/map-tile":
             qs = parse_qs(parsed.query)
             try:
                 z = int(float(qs.get("z", ["0"])[0]))

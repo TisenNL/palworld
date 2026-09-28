@@ -95,11 +95,8 @@ export interface MapMarker {
 }
 
 // ── World Tree zone data ──────────────────────────────────────────────────────
+// Same 10-bucket shape as Palpagos so buildLayers()/layerItems() work unmodified.
 
-export const wtDataSchema = z.object({
-  alphas:      z.array(coordinateSchema),
-  travel:      z.array(coordinateSchema),
-  collectibles: z.array(coordinateSchema),
-})
+export const wtDataSchema = gameDataSchema
 
-export type WtData = z.infer<typeof wtDataSchema>
+export type WtData = GameData

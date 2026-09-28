@@ -111,9 +111,10 @@ export const api = {
   },
   getMouseLoopState: (): Promise<MouseLoopState> =>
     json('/mouse-loop/state', mouseLoopStateSchema, { cache: 'no-store' }),
+  // Static paldb.cc tile pyramid bundled under public/map-tiles — no server/internet dependency.
   mapTileUrl: (z: number, x: number, y: number): string =>
-    `${apiBase}/map-tile?z=${z}&x=${x}&y=${y}`,
+    `/map-tiles/palpagos/z${z}/x${x}y${y}.webp`,
   mapTileUrlWt: (z: number, x: number, y: number): string =>
-    `${apiBase}/map-tile?z=${z}&x=${x}&y=${y}&map=wt`,
+    `/map-tiles/world-tree/z${z}/x${x}y${y}.webp`,
   mapIconUrl: (source: string): string => `${apiBase}/map-icon?src=${encodeURIComponent(source)}`,
 }

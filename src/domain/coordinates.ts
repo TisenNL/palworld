@@ -1,14 +1,24 @@
+/**
+ * Palpagos Islands map projection, matching paldb.cc's real tile pyramid.
+ * paldb.cc uses Leaflet CRS.Simple (flat, linear) — not Web Mercator —
+ * with 512px webp tiles, native zoom 0-4 (16x16 tiles at z4 = 8192px image).
+ *
+ * The in-game (x, y) shown on the pause menu ("ipos") maps linearly to
+ * image pixels via constants reverse-engineered from paldb.cc's own map
+ * config (transform_x_pixel/ingame_x_start derived from its landscape
+ * real-position bounds and perPixel=459 scale factor).
+ */
 export const mapProjection = {
-  tileSize: 256,
-  worldZoom: 16,
-  minTileZoom: 8,
-  maxTileZoom: 16,
-  width: 256 * 2 ** 16,
-  height: 256 * 2 ** 16,
-  longitudeScale: 2.0733021e-4,
-  longitudeOffset: -0.702925521,
-  latitudeScale: 2.07686855e-4,
-  latitudeOffset: 0.702599415,
+  tileSize: 512,
+  worldZoom: 4,
+  minTileZoom: 0,
+  maxTileZoom: 4,
+  width: 512 * 2 ** 4,
+  height: 512 * 2 ** 4,
+  transformXPixel: 3156.4270152505446,
+  ingameXStart: 2125.2984749455336,
+  transformYPixel: 3156.4270152505446,
+  ingameYStart: 1922.4400871459695,
 } as const
 
 export interface Point {
@@ -25,23 +35,19 @@ export function parseCoordinates(text: string): Point | null {
 }
 
 export function gameToImage(x: number, y: number): Point {
-  const longitude = mapProjection.longitudeScale * x + mapProjection.longitudeOffset
-  const latitude = mapProjection.latitudeScale * y + mapProjection.latitudeOffset
-  const latitudeRadians = (latitude * Math.PI) / 180
+  const scaleX = (y + mapProjection.ingameXStart) / mapProjection.transformXPixel
+  const scaleY = (x + mapProjection.ingameYStart) / mapProjection.transformYPixel
   return {
-    x: ((longitude + 180) / 360) * mapProjection.width,
-    y:
-      ((1 - Math.log(Math.tan(latitudeRadians) + 1 / Math.cos(latitudeRadians)) / Math.PI) / 2) *
-      mapProjection.height,
+    x: scaleY * mapProjection.width,
+    y: (1 - scaleX) * mapProjection.height,
   }
 }
 
 export function imageToGame(x: number, y: number): Point {
-  const longitude = (x / mapProjection.width) * 360 - 180
-  const n = Math.PI - (2 * Math.PI * y) / mapProjection.height
-  const latitude = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)))
+  const scaleY = x / mapProjection.width
+  const scaleX = 1 - y / mapProjection.height
   return {
-    x: (longitude - mapProjection.longitudeOffset) / mapProjection.longitudeScale,
-    y: (latitude - mapProjection.latitudeOffset) / mapProjection.latitudeScale,
+    x: scaleY * mapProjection.transformYPixel - mapProjection.ingameYStart,
+    y: scaleX * mapProjection.transformXPixel - mapProjection.ingameXStart,
   }
 }
