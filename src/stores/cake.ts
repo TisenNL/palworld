@@ -55,7 +55,11 @@ function writeState(state: CakeState): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   } catch (error) {
-    console.warn('Failed to persist cake state to localStorage:', error)
+    console.warn(
+      'Falha ao salvar configurações de bolo no localStorage (quota excedida ou modo privado):',
+      error instanceof Error ? error.message : error,
+    )
+    // Progresso ainda será salvo via /progress endpoint
   }
 }
 

@@ -6,6 +6,10 @@ import type { BreedData } from '@/types/data'
 export type BreedingWorkerRequest =
   | {
       id: number
+      action: 'cancel'
+    }
+  | {
+      id: number
       action: 'parents'
       data: BreedData
       child: string
@@ -33,14 +37,32 @@ export type BreedingWorkerRequest =
 
 let currentCancelId: number | null = null
 
+let cancelFlag = false
+let timeoutId: number | undefined
+
 self.onmessage = (event: MessageEvent<BreedingWorkerRequest>) => {
   const request = event.data
+
+  // Processa mensagem de cancelamento
   if (request.action === 'cancel') {
-    currentCancelId = request.id
-    self.postMessage({ id: request.id, cancelled: true })
+    cancelFlag = true
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId)
+      timeoutId = undefined
+    }
     return
   }
+
+  // Reset flag de cancelamento para nova operação
+  cancelFlag = false
   const engine = createBreedingEngine(request.data)
+
+  // Timeout de 5 segundos para prevenir operações travadas
+  timeoutId = self.setTimeout(() => {
+    self.postMessage({ id: request.id, error: 'Operation timeout (>5s)' })
+    cancelFlag = true
+  }, 5000)
+
   try {
     let result: unknown
     if (request.action === 'parents') {
@@ -50,8 +72,9 @@ self.onmessage = (event: MessageEvent<BreedingWorkerRequest>) => {
     } else {
       result = engine.generations(request.owned)
     }
-    if (currentCancelId === request.id) {
-      self.postMessage({ id: request.id, cancelled: true })
+
+    if (cancelFlag) {
+      self.postMessage({ id: request.id, error: 'Operation cancelled' })
     } else {
       self.postMessage({ id: request.id, result })
     }
@@ -60,6 +83,11 @@ self.onmessage = (event: MessageEvent<BreedingWorkerRequest>) => {
       id: request.id,
       error: cause instanceof Error ? cause.message : 'Calculation failed',
     })
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId)
+      timeoutId = undefined
+    }
   }
 }
 

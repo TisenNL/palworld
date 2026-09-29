@@ -125,3 +125,95 @@ describe('PalDB breeding data', () => {
     expect(allCodes.every((code) => engine.byCode.has(code))).toBe(true)
   })
 })
+
+
+describe('breeding - tie-breaking logic', () => {
+  it('returns deterministic result when multiple pals have exact power match', () => {
+    // Cria dados de teste onde múltiplos pals têm o mesmo rank
+    const testData: BreedData = {
+      version: 1,
+      source: 'test',
+      pals: [
+        pal('lowRank', 50),
+        pal('exactMatch1', 100),
+        pal('exactMatch2', 100),
+        pal('exactMatch3', 100),
+        pal('highRank', 150),
+      ],
+      unique: [],
+    }
+    
+    const engine = createBreedingEngine(testData)
+    
+    // Quando power = 100, deve escolher um dos exact matches de forma determinística
+    // Como todos têm rank = 100, a lógica de desempate por maior rank escolhe o último na lista
+    const result1 = engine.childrenFor([100])
+    const result2 = engine.childrenFor([100])
+    const result3 = engine.childrenFor([100])
+    
+    // Resultados devem ser idênticos (determinístico)
+    expect(result1).toEqual(result2)
+    expect(result2).toEqual(result3)
+    
+    // Deve retornar um dos pals com rank = 100
+    expect([100]).toContain(testData.pals.find(p => p.code === result1[0])?.rank)
+  })
+
+  it('prefers higher rank when distance is tied', () => {
+    // Cria cenário onde dois pals estão equidistantes do power alvo
+    const testData: BreedData = {
+      version: 1,
+      source: 'test',
+      pals: [
+        pal('lower', 90),   // distância = 10 do power 100
+        pal('higher', 110), // distância = 10 do power 100
+      ],
+      unique: [],
+    }
+    
+    const engine = createBreedingEngine(testData)
+    
+    // Com power = 100, ambos estão a distância 10
+    // Deve escolher 'higher' (rank 110) por ter maior rank
+    const result = engine.childrenFor([100])
+    expect(result).toEqual(['higher'])
+  })
+
+  it('handles edge case with power = 0', () => {
+    const testData: BreedData = {
+      version: 1,
+      source: 'test',
+      pals: [
+        pal('zero', 0),
+        pal('one', 1),
+        pal('ten', 10),
+      ],
+      unique: [],
+    }
+    
+    const engine = createBreedingEngine(testData)
+    
+    // Com power = 0, deve escolher o pal com rank = 0
+    const result = engine.childrenFor([0])
+    expect(result).toEqual(['zero'])
+  })
+
+  it('consistently selects same pal across multiple calls', () => {
+    // Dados mais realistas com muitos pals
+    const testData: BreedData = {
+      version: 1,
+      source: 'test',
+      pals: Array.from({ length: 20 }, (_, i) => pal(`pal${i}`, i * 10)),
+      unique: [],
+    }
+    
+    const engine = createBreedingEngine(testData)
+    
+    // Chama childrenFor múltiplas vezes com mesmo power
+    const results = Array.from({ length: 10 }, () => engine.childrenFor([75]))
+    
+    // Todos os resultados devem ser idênticos
+    const firstResult = results[0]
+    expect(results.every(r => JSON.stringify(r) === JSON.stringify(firstResult))).toBe(true)
+  })
+})

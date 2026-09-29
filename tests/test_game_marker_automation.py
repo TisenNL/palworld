@@ -828,3 +828,171 @@ class GameMarkerAutomationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_mouse_cache_rejects_degenerate_vectors(self):
+        """Teste que vetores de mouse com magnitude zero são rejeitados."""
+        game_input = FakeGameInput()
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "cal.json"
+            with mock.patch.object(gma, "CALIBRATION_CACHE_PATH", cache_path):
+                with mock.patch.object(gma, "OPT_DISK_CALIBRATION", True):
+                    with mock.patch.object(gma, "OPT_MOUSE_CACHE", True):
+                        # Salva cache com vetores degenerados (magnitude quase zero)
+                        save_calibration_cache(
+                            {
+                                "version": gma.CALIBRATION_CACHE_VERSION,
+                                "monitors": {
+                                    "degenerate": {
+                                        "keys": {
+                                            "W": [0, -8],
+                                            "S": [0, 8],
+                                            "D": [8, 0],
+                                            "A": [-8, 0],
+                                        },
+                                        "mouseX": [0.0, 0.0],  # Vetor degenerado
+                                        "mouseY": [0.0, 0.0],  # Vetor degenerado
+                                    }
+                                },
+                            }
+                        )
+                        
+                        # Carrega cache
+                        data = load_calibration_cache()
+                        entry = data["monitors"].get("degenerate")
+                        
+                        # _mouse_from_cache deve rejeitar vetores degenerados
+                        mouse_vectors = gma._mouse_from_cache(entry)
+                        self.assertIsNone(mouse_vectors)
+
+    def test_validate_cached_mouse_discards_degenerate_vectors(self):
+        """Teste que _validate_cached_mouse descarta vetores inválidos."""
+        game_input = FakeGameInput()
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "cal.json"
+            with mock.patch.object(gma, "CALIBRATION_CACHE_PATH", cache_path):
+                with mock.patch.object(gma, "OPT_DISK_CALIBRATION", True):
+                    with mock.patch.object(gma, "OPT_MOUSE_CACHE", True):
+                        # Salva cache inicial com vetores válidos
+                        save_calibration_cache(
+                            {
+                                "version": gma.CALIBRATION_CACHE_VERSION,
+                                "monitors": {
+                                    "test-key": {
+                                        "keys": {
+                                            "W": [0, -8],
+                                            "S": [0, 8],
+                                            "D": [8, 0],
+                                            "A": [-8, 0],
+                                        },
+                                        "mouseX": [1e-7, 0.0],  # Magnitude menor que 1e-6
+                                        "mouseY": [0.0, 1.0],
+                                    }
+                                },
+                            }
+                        )
+                        
+                        controller = GameMarkerController(
+                            lambda _box: (
+                                round(game_input.coordinate[0]),
+                                round(game_input.coordinate[1]),
+                            ),
+                            lambda **_changes: None,
+                            game_input=game_input,
+                            timeout_seconds=2,
+                            sleep=lambda _seconds: None,
+                            cache_key="test-key",
+                        )
+                        
+                        # Carrega vetores inválidos
+                        degenerate_vectors = ((1e-7, 0.0), (0.0, 1.0))
+                        
+                        # _validate_cached_mouse deve detectar vetor degenerado e descartar cache
+                        valid, _ = controller._validate_cached_mouse(
+                            degenerate_vectors,
+                            (100, 100),
+                            (450, 475, 550, 525),
+                            (500, 500),
+                            time.monotonic(),
+                        )
+                        
+                        # Validação deve falhar
+                        self.assertFalse(valid)
+                        
+                        # Cache deve ter sido descartado
+                        reloaded = load_calibration_cache()
+                        entry = reloaded["monitors"].get("test-key", {})
+                        self.assertNotIn("mouseX", entry)
+                        self.assertNotIn("mouseY", entry)
+
+
+    def test_pixel_stability_respects_cancellation(self):
+        """Teste que pixel stability loop pode ser cancelado via flag."""
+        game_input = FakeGameInput()
+        controller = GameMarkerController(
+            lambda _box: (100, 100),
+            lambda **_changes: None,
+            game_input=game_input,
+            timeout_seconds=2,
+            sleep=lambda _seconds: None,
+        )
+        
+        # Simula cancelamento durante pixel stability
+        controller._cancel.set()
+        
+        # _check_safety deve lançar RuntimeError quando cancelado
+        with self.assertRaises(RuntimeError) as context:
+            controller._check_safety(time.monotonic())
+        
+        self.assertIn("cancel", str(context.exception).lower())
+
+    def test_pixel_stability_respects_escape_key(self):
+        """Teste que pixel stability loop pode ser cancelado via Escape key."""
+        
+        class FakeGameInputWithEscape(FakeGameInput):
+            def __init__(self):
+                super().__init__()
+                self.escape_count = 0
+            
+            def escape_pressed(self):
+                self.escape_count += 1
+                # Simula Escape pressionado após primeira verificação
+                return self.escape_count > 1
+        
+        game_input = FakeGameInputWithEscape()
+        controller = GameMarkerController(
+            lambda _box: (100, 100),
+            lambda **_changes: None,
+            game_input=game_input,
+            timeout_seconds=2,
+            sleep=lambda _seconds: None,
+        )
+        
+        # _check_safety deve detectar Escape e lançar RuntimeError
+        controller._check_safety(time.monotonic())  # Primeira chamada OK
+        
+        with self.assertRaises(RuntimeError) as context:
+            controller._check_safety(time.monotonic())  # Segunda detecta Escape
+        
+        self.assertIn("cancel", str(context.exception).lower())
+
+    def test_pixel_stability_respects_timeout(self):
+        """Teste que pixel stability loop respeita timeout do controller."""
+        game_input = FakeGameInput()
+        controller = GameMarkerController(
+            lambda _box: (100, 100),
+            lambda **_changes: None,
+            game_input=game_input,
+            timeout_seconds=0.1,  # Timeout muito curto
+            sleep=lambda _seconds: time.sleep(0.05),
+        )
+        
+        started = time.monotonic()
+        # Aguarda para exceder timeout
+        time.sleep(0.15)
+        
+        # _check_safety deve lançar TimeoutError
+        with self.assertRaises(TimeoutError) as context:
+            controller._check_safety(started)
+        
+        self.assertIn("timed out", str(context.exception).lower())

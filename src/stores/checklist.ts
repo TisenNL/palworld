@@ -135,6 +135,8 @@ export const useChecklistStore = defineStore('checklist', () => {
   function scheduleSave(): void {
     window.clearTimeout(saveTimer)
     saveTimer = window.setTimeout(() => {
+      // Captura estado no momento da execução, não no agendamento
+      // Isso garante que mudanças rápidas salvem o estado mais recente
       const next = payload()
       void api.saveProgress(next).catch(() => undefined)
     }, 350)
@@ -227,8 +229,10 @@ export const useChecklistStore = defineStore('checklist', () => {
     if (!initialized.value) return
     window.clearTimeout(saveTimer)
     const body = JSON.stringify(payload())
-    const blob = new Blob([body], { type: 'application/json' })
-    if (blob.size > 60 * 1024) {
+    const sizeKB = new Blob([body]).size / 1024
+
+    // sendBeacon tem limite de ~64KB; usar fetch como fallback para payloads grandes
+    if (sizeKB > 60) {
       void fetch('/progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -236,7 +240,7 @@ export const useChecklistStore = defineStore('checklist', () => {
         keepalive: true,
       }).catch(() => undefined)
     } else {
-      navigator.sendBeacon('/progress', blob)
+      navigator.sendBeacon('/progress', new Blob([body], { type: 'application/json' }))
     }
   }
 
