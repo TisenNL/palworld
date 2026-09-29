@@ -19,42 +19,33 @@ INGAME_Y_START = 1000.0 + (-301000.0 - LAND_MIN[1]) / PER_PIXEL
 CLUSTER_LINK_DISTANCE = 3000.0
 
 # ── World Tree zone (separate coordinate space) ──────────────────────────────
-# PalDB uses these for World Tree in treemap_data_en_full.js
+# PalDB uses these for World Tree in treemap_data_en_full.js and worldtree.html
 WT_LAND_MIN = (347351.5, -818197.0)
+WT_LAND_MAX = (689148.5, -476400.0)
 WT_PER_PIXEL = 1335.144531
+WT_TRANSFORM_X_PIXEL = (WT_LAND_MAX[0] - WT_LAND_MIN[0]) / WT_PER_PIXEL # ~256.0000000479349
+WT_TRANSFORM_Y_PIXEL = (WT_LAND_MAX[1] - WT_LAND_MIN[1]) / WT_PER_PIXEL # ~256.0000000479349
 WT_INGAME_X_START = -648.7
 WT_INGAME_Y_START = 127.7
 WT_MAP_JS = ROOT / "treemap_data_en_full.js"
 WT_OUT = ROOT / "public" / "wt-data.json"
 
-LAND_MIN = (-1099400.0, -724400.0)
-LAND_MAX = (349400.0, 724400.0)
-PER_PIXEL = 459.0
-INGAME_X_START = 1000.0 + (-582888.0 - LAND_MIN[0]) / PER_PIXEL
-INGAME_Y_START = 1000.0 + (-301000.0 - LAND_MIN[1]) / PER_PIXEL
-CLUSTER_LINK_DISTANCE = 3000.0
-
-# ── World Tree zone (separate coordinate space) ──────────────────────────────
-# Calibrated from: PER_PIXEL=459, ore center raw=(518050,-637535)
-# maps to in-game (~-200, 850). LAND_MIN back-calculated from that anchor.
-WT_LAND_MIN = (609850.0, -1027818.0)
-WT_PER_PIXEL = 459.0
-WT_OUT = ROOT / "public" / "wt-data.json"
-
 
 def wt_rpos_to_ipos(x: float, y: float) -> tuple[float, float]:
     """Convert raw Unreal coords to World Tree in-game coords (matches paldb.cc logic)."""
-    # Paldb logic from worldtree.html:
-    # transform_x = (y - land_min_y) / perPixel + ingame_x_start
-    # transform_y = (x - land_min_x) / perPixel + ingame_y_start
-    ix = (y - WT_LAND_MIN[1]) / WT_PER_PIXEL + WT_INGAME_X_START
-    iy = (x - WT_LAND_MIN[0]) / WT_PER_PIXEL + WT_INGAME_Y_START
+    # Paldb logic from paldb-map.js:
+    # rposToScale: X=(rx - landMinX)/(landMaxX - landMinX), Y=(ry - landMinY)/(landMaxY - landMinY)
+    # projIpos: ipos.X = round(scaleY * transform_y_pixel - ingame_y_start), ipos.Y = round(scaleX * transform_x_pixel - ingame_x_start)
+    scale_x = (x - WT_LAND_MIN[0]) / (WT_LAND_MAX[0] - WT_LAND_MIN[0])
+    scale_y = (y - WT_LAND_MIN[1]) / (WT_LAND_MAX[1] - WT_LAND_MIN[1])
+    ix = scale_y * WT_TRANSFORM_Y_PIXEL - WT_INGAME_Y_START
+    iy = scale_x * WT_TRANSFORM_X_PIXEL - WT_INGAME_X_START
     return round(ix, 1), round(iy, 1)
 
 
 def wt_map_within(x: float, y: float) -> bool:
     """Return True if raw Unreal coord is within World Tree bounds."""
-    return 390000.0 < x < 650000.0 and -770000.0 < y < -500000.0
+    return WT_LAND_MIN[0] < x < WT_LAND_MAX[0] and WT_LAND_MIN[1] < y < WT_LAND_MAX[1]
 CLUSTER_NODE_TYPES = {
     "Ore Cluster": "Ore",
     "Coal Cluster": "Coal",

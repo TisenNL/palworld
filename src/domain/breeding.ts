@@ -37,9 +37,6 @@ export function createBreedingEngine(data: BreedData) {
     for (const candidate of data.pals) {
       if (candidate.ignoreCombi || uniqueChildren.has(candidate.code)) continue
       const nextDistance = Math.abs(candidate.rank - power)
-      // Em caso de empate de distância, prefere o pal com maior rank.
-      // Isso garante resultado determinístico quando múltiplos pals têm o power exato
-      // ou estão equidistantes do power alvo (ex: power=100, candidates com rank=90 e 110).
       if (
         nextDistance < distance ||
         (nextDistance === distance &&
