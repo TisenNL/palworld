@@ -82,6 +82,9 @@ function toggleWtGroup(groupId: string, event: Event): void {
 
 function setAllWt(visible: boolean): void {
   for (const layer of map.wtLayers) preferences.values.mapLayers[layer.id] = visible
+  if (visible) {
+    void nextTick(() => canvas.value?.fitMarkers())
+  }
 }
 
 function panelOpen(key: string, fallback = true): boolean {

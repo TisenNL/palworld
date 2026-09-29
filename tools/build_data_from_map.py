@@ -19,42 +19,33 @@ INGAME_Y_START = 1000.0 + (-301000.0 - LAND_MIN[1]) / PER_PIXEL
 CLUSTER_LINK_DISTANCE = 3000.0
 
 # ── World Tree zone (separate coordinate space) ──────────────────────────────
-# PalDB uses these for World Tree in treemap_data_en_full.js
+# PalDB uses these for World Tree in treemap_data_en_full.js and worldtree.html
 WT_LAND_MIN = (347351.5, -818197.0)
+WT_LAND_MAX = (689148.5, -476400.0)
 WT_PER_PIXEL = 1335.144531
+WT_TRANSFORM_X_PIXEL = (WT_LAND_MAX[0] - WT_LAND_MIN[0]) / WT_PER_PIXEL # ~256.0000000479349
+WT_TRANSFORM_Y_PIXEL = (WT_LAND_MAX[1] - WT_LAND_MIN[1]) / WT_PER_PIXEL # ~256.0000000479349
 WT_INGAME_X_START = -648.7
 WT_INGAME_Y_START = 127.7
 WT_MAP_JS = ROOT / "treemap_data_en_full.js"
 WT_OUT = ROOT / "public" / "wt-data.json"
 
-LAND_MIN = (-1099400.0, -724400.0)
-LAND_MAX = (349400.0, 724400.0)
-PER_PIXEL = 459.0
-INGAME_X_START = 1000.0 + (-582888.0 - LAND_MIN[0]) / PER_PIXEL
-INGAME_Y_START = 1000.0 + (-301000.0 - LAND_MIN[1]) / PER_PIXEL
-CLUSTER_LINK_DISTANCE = 3000.0
-
-# ── World Tree zone (separate coordinate space) ──────────────────────────────
-# Calibrated from: PER_PIXEL=459, ore center raw=(518050,-637535)
-# maps to in-game (~-200, 850). LAND_MIN back-calculated from that anchor.
-WT_LAND_MIN = (609850.0, -1027818.0)
-WT_PER_PIXEL = 459.0
-WT_OUT = ROOT / "public" / "wt-data.json"
-
 
 def wt_rpos_to_ipos(x: float, y: float) -> tuple[float, float]:
     """Convert raw Unreal coords to World Tree in-game coords (matches paldb.cc logic)."""
-    # Paldb logic from worldtree.html:
-    # transform_x = (y - land_min_y) / perPixel + ingame_x_start
-    # transform_y = (x - land_min_x) / perPixel + ingame_y_start
-    ix = (y - WT_LAND_MIN[1]) / WT_PER_PIXEL + WT_INGAME_X_START
-    iy = (x - WT_LAND_MIN[0]) / WT_PER_PIXEL + WT_INGAME_Y_START
+    # Paldb logic from paldb-map.js:
+    # rposToScale: X=(rx - landMinX)/(landMaxX - landMinX), Y=(ry - landMinY)/(landMaxY - landMinY)
+    # projIpos: ipos.X = round(scaleY * transform_y_pixel - ingame_y_start), ipos.Y = round(scaleX * transform_x_pixel - ingame_x_start)
+    scale_x = (x - WT_LAND_MIN[0]) / (WT_LAND_MAX[0] - WT_LAND_MIN[0])
+    scale_y = (y - WT_LAND_MIN[1]) / (WT_LAND_MAX[1] - WT_LAND_MIN[1])
+    ix = scale_y * WT_TRANSFORM_Y_PIXEL - WT_INGAME_Y_START
+    iy = scale_x * WT_TRANSFORM_X_PIXEL - WT_INGAME_X_START
     return round(ix, 1), round(iy, 1)
 
 
 def wt_map_within(x: float, y: float) -> bool:
     """Return True if raw Unreal coord is within World Tree bounds."""
-    return 390000.0 < x < 650000.0 and -770000.0 < y < -500000.0
+    return WT_LAND_MIN[0] < x < WT_LAND_MAX[0] and WT_LAND_MIN[1] < y < WT_LAND_MAX[1]
 CLUSTER_NODE_TYPES = {
     "Ore Cluster": "Ore",
     "Coal Cluster": "Coal",
@@ -470,13 +461,16 @@ def build() -> dict:
 def build_wt() -> dict:
     """Build World Tree zone data strictly from PalDB's treemap_data_en_full.js."""
     if not WT_MAP_JS.exists():
-        return {"alphas": [], "travel": [], "collectibles": []}
+        return {"alphas": [], "towers": [], "travel": [], "effigies": [], "journals": [], "collectibles": []}
     
     src = WT_MAP_JS.read_text(encoding="utf-8", errors="ignore")
     fixed = extract_array(src, "fixedDungeon")
     
     alphas = []
+    towers = []
     travel = []
+    effigies = []
+    journals = []
     collectibles = []
     
     for row in fixed:
@@ -488,8 +482,8 @@ def build_wt() -> dict:
             continue
             
         x, y = wt_rpos_to_ipos(rx, ry)
-        t = row.get("type")
-        name = clean_text(str(row.get("item") or t)) or str(t)
+        t = str(row.get("type") or "")
+        name = clean_text(str(row.get("item") or t)) or t
         lv = row.get("lv")
         
         if t == "Alpha Pal":
@@ -497,6 +491,14 @@ def build_wt() -> dict:
                 "id": slug(f"wt-alpha-{name}-{lv}"),
                 "lv": lv,
                 "name": name,
+                "x": x,
+                "y": y
+            })
+        elif t == "Tower":
+            towers.append({
+                "id": slug(f"wt-tower-{name}-{x}_{y}"),
+                "name": name,
+                "lv": lv,
                 "x": x,
                 "y": y
             })
@@ -508,20 +510,47 @@ def build_wt() -> dict:
                 "x": x,
                 "y": y
             })
-        elif t in ("Fishing Spot", "Rare Fishing Spot", "Ancient Ruin", "Kinship Peach", "Beautiful Flower", "Fruit Tree", "Chest", "Junk", "Paloxite"):
+        elif t.endswith(" Effigy"):
+            pal = t[: -len(" Effigy")]
+            effigies.append({
+                "id": slug(f"wt-effigy-{pal}-{x}_{y}"),
+                "type": pal,
+                "name": name,
+                "x": x,
+                "y": y
+            })
+        elif t == "Journals":
+            journals.append({
+                "id": slug(f"wt-journal-{name}-{x}_{y}"),
+                "name": name,
+                "x": x,
+                "y": y
+            })
+        else:
+            ctype = "Egg (World Tree)" if t == "World Tree Egg" else t
             collectibles.append({
-                "id": slug(f"wt-{t}-{x}_{y}"),
-                "type": t,
+                "id": slug(f"wt-{ctype}-{x}_{y}"),
+                "type": ctype,
                 "name": name,
                 "x": x,
                 "y": y
             })
             
     alphas.sort(key=lambda a: (a["lv"] is None, a["lv"] or 0, a["name"]))
+    towers.sort(key=lambda t: (t["lv"] is None, t["lv"] or 0, t["name"]))
     travel.sort(key=lambda t: (t["type"], t["name"]))
+    effigies.sort(key=lambda e: (e["type"], e["x"], e["y"]))
+    journals.sort(key=lambda j: (j["name"], j["x"], j["y"]))
     collectibles.sort(key=lambda c: (c["type"], c["name"]))
     
-    return {"alphas": alphas, "travel": travel, "collectibles": collectibles}
+    return {
+        "alphas": alphas,
+        "towers": towers,
+        "travel": travel,
+        "effigies": effigies,
+        "journals": journals,
+        "collectibles": collectibles,
+    }
 
 
 def main() -> int:
