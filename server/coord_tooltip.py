@@ -277,13 +277,16 @@ def save_progress_file(body: dict) -> dict:
         "counts": {k: len(v) for k, v in checks.items()},
         "owned": len(breed_owned),
     }
-MonitorEnumProc = ctypes.WINFUNCTYPE(
-    ctypes.c_bool,
-    ctypes.c_ulong,
-    ctypes.c_ulong,
-    ctypes.POINTER(wintypes.RECT),
-    ctypes.c_longlong,
-)
+if hasattr(ctypes, "WINFUNCTYPE"):
+    MonitorEnumProc = ctypes.WINFUNCTYPE(
+        ctypes.c_bool,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+        ctypes.POINTER(wintypes.RECT),
+        ctypes.c_longlong,
+    )
+else:
+    MonitorEnumProc = None
 
 
 class HudTooltip:
@@ -885,6 +888,9 @@ def crop_to_densest_white_line(mask):
 
 def largest_monitor() -> Tuple[int, int, int, int]:
     """Return the largest monitor as left, top, width, and height."""
+    if not hasattr(ctypes, "windll") or MonitorEnumProc is None:
+        return 0, 0, 1920, 1080
+
     rects: List[Tuple[int, int, int, int]] = []
 
     def _cb(_hmon, _hdc, lprc, _data):
@@ -1387,17 +1393,18 @@ def _warmup_ocr() -> None:
 
 def main() -> None:
     global overlay, ocr_selector, game_marker_controller, mouse_loop_controller
-    overlay = HudTooltip()
-    ocr_selector = OcrSelector(overlay.root)
-    game_marker_controller = GameMarkerController(
-        read_game_coordinate,
-        update_game_marker_state,
-    )
-    mouse_loop_controller = MouseComboLoop(update_mouse_loop_state)
-    # Pre-warm the ONNX model in the background so the first marking call
-    # does not pay the cold-start penalty (typically 500ms-2s).
-    threading.Thread(target=_warmup_ocr, daemon=True).start()
-    threading.Thread(target=start_server, daemon=True).start()
+    try:
+        overlay = HudTooltip()
+        ocr_selector = OcrSelector(overlay.root)
+        game_marker_controller = GameMarkerController(
+            read_game_coordinate,
+            update_game_marker_state,
+        )
+        mouse_loop_controller = MouseComboLoop(update_mouse_loop_state)
+        threading.Thread(target=_warmup_ocr, daemon=True).start()
+    except Exception as exc:
+        print(f"GUI/Automation init skipped: {exc}", flush=True)
+
     ml, mt, mw, mh = largest_monitor()
     ax, ay = hud_anchor_xy()
     print("=" * 50, flush=True)
@@ -1405,14 +1412,18 @@ def main() -> None:
     print(f"  Monitor {mw}x{mh} @ ({ml},{mt})", flush=True)
     print(f"  Fixed HUD tooltip @ ({ax}, {ay})", flush=True)
     print(f"  http://127.0.0.1:{PORT}/", flush=True)
-    print("  Esc clears HUD · Ctrl+C stops this process", flush=True)
     print("=" * 50, flush=True)
-    try:
-        overlay.run()
-    except KeyboardInterrupt:
-        print("\nInterrupted.", flush=True)
-    print("Exiting.", flush=True)
-    os._exit(0)
+
+    if overlay:
+        threading.Thread(target=start_server, daemon=True).start()
+        try:
+            overlay.run()
+        except KeyboardInterrupt:
+            print("\nInterrupted.", flush=True)
+        print("Exiting.", flush=True)
+        os._exit(0)
+    else:
+        start_server()
 
 
 if __name__ == "__main__":

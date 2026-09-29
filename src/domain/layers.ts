@@ -201,7 +201,13 @@ function wtGroupFor(layer: Omit<MapLayer, 'group'>): string {
  */
 export function buildWtLayers(data: WtData): MapLayer[] {
   const layers: Array<Omit<MapLayer, 'group'>> = [
-    { id: 'wt-alphas', label: 'Alpha Pals', color: '#34d399', storage: 'alphas' },
+    {
+      id: 'wt-alphas',
+      label: 'Alpha Pals',
+      iconKey: 'Alpha Pals',
+      color: '#34d399',
+      storage: 'alphas',
+    },
     { id: 'wt-towers', label: 'Towers', iconKey: 'Towers', color: '#f472b6', storage: 'towers' },
     {
       id: 'wt-journals',
@@ -233,6 +239,7 @@ export function buildWtLayers(data: WtData): MapLayer[] {
     layers.push({
       id: `wt-effigy-${slug(type)}`,
       label: `${type} Effigy`,
+      iconKey: `${type} Effigy`,
       color: effigyColors[type] ?? '#86efac',
       storage: 'effigies',
       typeIn: [type],
@@ -245,6 +252,7 @@ export function buildWtLayers(data: WtData): MapLayer[] {
     layers.push({
       id: `wt-loot-${slug(type)}`,
       label: type,
+      iconKey: type,
       color: wtLootColors[type] ?? (/^Egg/.test(type) ? '#a3e635' : '#94a3b8'),
       storage: 'collectibles',
       typeIn: [type],
