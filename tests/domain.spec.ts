@@ -155,10 +155,12 @@ describe('World Tree map data', () => {
   it('parses wt-data.json cleanly even with missing optional categories', () => {
     const wtData = wtDataSchema.parse(rawWtData)
     expect(wtData.alphas.length).toBeGreaterThan(0)
+    expect(wtData.towers.length).toBeGreaterThan(0)
     expect(wtData.travel.length).toBeGreaterThan(0)
+    expect(wtData.effigies.length).toBeGreaterThan(0)
+    expect(wtData.journals.length).toBeGreaterThan(0)
     expect(wtData.collectibles.length).toBeGreaterThan(0)
     expect(wtData.bounties).toEqual([])
-    expect(wtData.effigies).toEqual([])
   })
 
   it('builds World Tree layers from parsed data', () => {
