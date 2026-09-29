@@ -13,7 +13,7 @@
     "Fast Travel": "https://cdn.paldb.cc/image/Pal/Texture/UI/InGame/T_icon_compass_FTtower.webp",
     "Watchtower": "https://cdn.paldb.cc/image/Pal/Texture/UI/InGame/T_icon_compass_FTUnlockMap.webp",
     "Lifmunk Effigy": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Relic.webp",
-    "Cattiva Effigy": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Relic_01.webp",
+    "Cattiva Effigy": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Relic_08.webp",
     "Lamball Effigy": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Relic_01.webp",
     "Pengullet Effigy": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Relic_02.webp",
     "Munchill Effigy": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Relic_03.webp",
@@ -70,7 +70,7 @@
     "Incident": "https://cdn.paldb.cc/image/Pal/Texture/UI/InGame/T_icon_compass_EnemyCamp.webp",
     "Junk": "https://cdn.paldb.cc/image/Pal/Texture/UI/InGame/T_icon_compass_Search_Junk.webp",
     "NPC": "https://cdn.paldb.cc/image/Pal/Texture/UI/InGame/T_icon_compass_FTUnlockMap.webp",
-    "Paloxite": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_Chromium.webp",
+    "Paloxite": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_WorldTreeOre.webp",
     "Teafant Spring": "https://cdn.paldb.cc/image/Pal/Texture/UI/Fishing/T_Fishing_FishPondIcon.webp"
   }
 }

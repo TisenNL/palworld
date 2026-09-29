@@ -200,7 +200,30 @@ function pumpIcons(): void {
         if (!response.ok) throw new Error(`Icon request failed with status ${response.status}`)
         return response.blob()
       })
-      .then(createImageBitmap)
+      .then((blob) => {
+        // Check if it's an SVG
+        if (blob.type === 'image/svg+xml' || item.url.endsWith('.svg')) {
+          return new Promise<ImageBitmap>((resolve, reject) => {
+            const img = new Image()
+            const objectUrl = URL.createObjectURL(blob)
+            img.onload = () => {
+              const canvas = document.createElement('canvas')
+              canvas.width = img.width || 30
+              canvas.height = img.height || 30
+              const ctx = canvas.getContext('2d')!
+              ctx.drawImage(img, 0, 0)
+              URL.revokeObjectURL(objectUrl)
+              createImageBitmap(canvas).then(resolve).catch(reject)
+            }
+            img.onerror = () => {
+              URL.revokeObjectURL(objectUrl)
+              reject(new Error('Failed to load SVG'))
+            }
+            img.src = objectUrl
+          })
+        }
+        return createImageBitmap(blob)
+      })
       .then((image) => {
         iconCache.set(item.key, item.enhance ? enhancedIcon(image) : image)
         failedIcons.delete(item.key)
