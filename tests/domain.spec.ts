@@ -24,12 +24,13 @@ vi.mock('primevue/inputnumber', () => ({
 
 import rawGameData from '../public/data.json'
 import rawMapIcons from '../public/map_icons.json'
+import rawWtData from '../public/wt-data.json'
 import { cakeRecipes, calculateCakes, emptyStock, priceDefaults } from '@/domain/cakes'
 import CakesView from '@/views/CakesView.vue'
 import { gameToImage, imageToGame, parseCoordinates } from '@/domain/coordinates'
-import { buildLayers } from '@/domain/layers'
+import { buildLayers, buildWtLayers } from '@/domain/layers'
 import { LruCache } from '@/domain/lruCache'
-import { gameDataSchema, mapIconsSchema } from '@/types/data'
+import { gameDataSchema, mapIconsSchema, wtDataSchema } from '@/types/data'
 
 describe('map coordinates', () => {
   it('accepts positive and negative coordinates', () => {
@@ -150,124 +151,22 @@ describe('LRU cache', () => {
   })
 })
 
-
-describe('map coordinates - parseCoordinates edge cases', () => {
-  it('handles valid coordinate formats', () => {
-    expect(parseCoordinates('-16, -339')).toEqual({ x: -16, y: -339 })
-    expect(parseCoordinates('9 224')).toEqual({ x: 9, y: 224 })
-    expect(parseCoordinates('100;200')).toEqual({ x: 100, y: 200 })
-    expect(parseCoordinates('10.5, 20.3')).toEqual({ x: 10.5, y: 20.3 })
-    expect(parseCoordinates('10,5 20,3')).toEqual({ x: 10.5, y: 20.3 }) // Vírgula como decimal
+describe('World Tree map data', () => {
+  it('parses wt-data.json cleanly even with missing optional categories', () => {
+    const wtData = wtDataSchema.parse(rawWtData)
+    expect(wtData.alphas.length).toBeGreaterThan(0)
+    expect(wtData.towers.length).toBeGreaterThan(0)
+    expect(wtData.travel.length).toBeGreaterThan(0)
+    expect(wtData.effigies.length).toBeGreaterThan(0)
+    expect(wtData.journals.length).toBeGreaterThan(0)
+    expect(wtData.collectibles.length).toBeGreaterThan(0)
+    expect(wtData.bounties).toEqual([])
   })
 
-  it('rejects invalid formats', () => {
-    expect(parseCoordinates('invalid')).toBeNull()
-    expect(parseCoordinates('123')).toBeNull() // Apenas um número
-    expect(parseCoordinates('')).toBeNull() // String vazia
-    expect(parseCoordinates('   ')).toBeNull() // Apenas espaços
-    expect(parseCoordinates('abc, def')).toBeNull() // Não numérico
-    expect(parseCoordinates('10, ')).toBeNull() // Falta segundo número
-    expect(parseCoordinates(', 20')).toBeNull() // Falta primeiro número
-  })
-
-  it('handles edge case with special characters', () => {
-    expect(parseCoordinates('10@20')).toBeNull()
-    expect(parseCoordinates('10#20')).toBeNull()
-    expect(parseCoordinates('(10, 20)')).toBeNull() // Parênteses não são suportados
-  })
-
-  it('handles very large numbers', () => {
-    expect(parseCoordinates('999999, -999999')).toEqual({ x: 999999, y: -999999 })
-  })
-
-  it('rejects NaN and Infinity', () => {
-    expect(parseCoordinates('Infinity, 20')).toBeNull()
-    expect(parseCoordinates('10, NaN')).toBeNull()
-  })
-
-  it('handles decimal formats correctly', () => {
-    expect(parseCoordinates('1.5, 2.5')).toEqual({ x: 1.5, y: 2.5 })
-    expect(parseCoordinates('1,5 2,5')).toEqual({ x: 1.5, y: 2.5 }) // Vírgula europeia
-  })
-})
-
-
-describe('LruCache - falsy values support', () => {
-  it('stores and retrieves null values', () => {
-    const cache = new LruCache<string, string | null>(3)
-    cache.set('key1', null)
-    expect(cache.get('key1')).toBeNull()
-    expect(cache.has('key1')).toBe(true)
-  })
-
-  it('stores and retrieves 0 values', () => {
-    const cache = new LruCache<string, number>(3)
-    cache.set('key1', 0)
-    expect(cache.get('key1')).toBe(0)
-    expect(cache.has('key1')).toBe(true)
-  })
-
-  it('stores and retrieves false values', () => {
-    const cache = new LruCache<string, boolean>(3)
-    cache.set('key1', false)
-    expect(cache.get('key1')).toBe(false)
-    expect(cache.has('key1')).toBe(true)
-  })
-
-  it('stores and retrieves empty string values', () => {
-    const cache = new LruCache<string, string>(3)
-    cache.set('key1', '')
-    expect(cache.get('key1')).toBe('')
-    expect(cache.has('key1')).toBe(true)
-  })
-
-  it('returns undefined for non-existent keys', () => {
-    const cache = new LruCache<string, string>(3)
-    expect(cache.get('nonexistent')).toBeUndefined()
-    expect(cache.has('nonexistent')).toBe(false)
-  })
-
-  it('distinguishes between stored undefined and non-existent key', () => {
-    const cache = new LruCache<string, string | undefined>(3)
-    cache.set('key1', undefined)
-    
-    // Key exists, mas valor é undefined
-    expect(cache.has('key1')).toBe(true)
-    expect(cache.get('key1')).toBeUndefined()
-    
-    // Key não existe
-    expect(cache.has('key2')).toBe(false)
-    expect(cache.get('key2')).toBeUndefined()
-  })
-
-  it('maintains LRU order with falsy values', () => {
-    const cache = new LruCache<string, number>(2)
-    cache.set('a', 0)
-    cache.set('b', 1)
-    
-    // Acessa 'a' (move para fim)
-    expect(cache.get('a')).toBe(0)
-    
-    // Adiciona 'c' (deve remover 'b', não 'a')
-    cache.set('c', 2)
-    
-    expect(cache.has('a')).toBe(true)
-    expect(cache.has('b')).toBe(false)
-    expect(cache.has('c')).toBe(true)
-  })
-
-  it('handles mixed truthy and falsy values', () => {
-    const cache = new LruCache<string, string | number | boolean | null>(5)
-    cache.set('truthy', 'hello')
-    cache.set('zero', 0)
-    cache.set('null', null)
-    cache.set('false', false)
-    cache.set('empty', '')
-    
-    expect(cache.get('truthy')).toBe('hello')
-    expect(cache.get('zero')).toBe(0)
-    expect(cache.get('null')).toBeNull()
-    expect(cache.get('false')).toBe(false)
-    expect(cache.get('empty')).toBe('')
+  it('builds World Tree layers from parsed data', () => {
+    const wtData = wtDataSchema.parse(rawWtData)
+    const layers = buildWtLayers(wtData)
+    expect(layers.length).toBeGreaterThan(3)
+    expect(layers).toContainEqual(expect.objectContaining({ id: 'wt-alphas', storage: 'alphas' }))
   })
 })

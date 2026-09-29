@@ -470,13 +470,16 @@ def build() -> dict:
 def build_wt() -> dict:
     """Build World Tree zone data strictly from PalDB's treemap_data_en_full.js."""
     if not WT_MAP_JS.exists():
-        return {"alphas": [], "travel": [], "collectibles": []}
+        return {"alphas": [], "towers": [], "travel": [], "effigies": [], "journals": [], "collectibles": []}
     
     src = WT_MAP_JS.read_text(encoding="utf-8", errors="ignore")
     fixed = extract_array(src, "fixedDungeon")
     
     alphas = []
+    towers = []
     travel = []
+    effigies = []
+    journals = []
     collectibles = []
     
     for row in fixed:
@@ -488,8 +491,8 @@ def build_wt() -> dict:
             continue
             
         x, y = wt_rpos_to_ipos(rx, ry)
-        t = row.get("type")
-        name = clean_text(str(row.get("item") or t)) or str(t)
+        t = str(row.get("type") or "")
+        name = clean_text(str(row.get("item") or t)) or t
         lv = row.get("lv")
         
         if t == "Alpha Pal":
@@ -497,6 +500,14 @@ def build_wt() -> dict:
                 "id": slug(f"wt-alpha-{name}-{lv}"),
                 "lv": lv,
                 "name": name,
+                "x": x,
+                "y": y
+            })
+        elif t == "Tower":
+            towers.append({
+                "id": slug(f"wt-tower-{name}-{x}_{y}"),
+                "name": name,
+                "lv": lv,
                 "x": x,
                 "y": y
             })
@@ -508,20 +519,47 @@ def build_wt() -> dict:
                 "x": x,
                 "y": y
             })
-        elif t in ("Fishing Spot", "Rare Fishing Spot", "Ancient Ruin", "Kinship Peach", "Beautiful Flower", "Fruit Tree", "Chest", "Junk", "Paloxite"):
+        elif t.endswith(" Effigy"):
+            pal = t[: -len(" Effigy")]
+            effigies.append({
+                "id": slug(f"wt-effigy-{pal}-{x}_{y}"),
+                "type": pal,
+                "name": name,
+                "x": x,
+                "y": y
+            })
+        elif t == "Journals":
+            journals.append({
+                "id": slug(f"wt-journal-{name}-{x}_{y}"),
+                "name": name,
+                "x": x,
+                "y": y
+            })
+        else:
+            ctype = "Egg (World Tree)" if t == "World Tree Egg" else t
             collectibles.append({
-                "id": slug(f"wt-{t}-{x}_{y}"),
-                "type": t,
+                "id": slug(f"wt-{ctype}-{x}_{y}"),
+                "type": ctype,
                 "name": name,
                 "x": x,
                 "y": y
             })
             
     alphas.sort(key=lambda a: (a["lv"] is None, a["lv"] or 0, a["name"]))
+    towers.sort(key=lambda t: (t["lv"] is None, t["lv"] or 0, t["name"]))
     travel.sort(key=lambda t: (t["type"], t["name"]))
+    effigies.sort(key=lambda e: (e["type"], e["x"], e["y"]))
+    journals.sort(key=lambda j: (j["name"], j["x"], j["y"]))
     collectibles.sort(key=lambda c: (c["type"], c["name"]))
     
-    return {"alphas": alphas, "travel": travel, "collectibles": collectibles}
+    return {
+        "alphas": alphas,
+        "towers": towers,
+        "travel": travel,
+        "effigies": effigies,
+        "journals": journals,
+        "collectibles": collectibles,
+    }
 
 
 def main() -> int:

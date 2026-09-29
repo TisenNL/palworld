@@ -224,8 +224,9 @@ export const useMapStore = defineStore('map', () => {
           preferences.values.mapLayers[layer.id] = true
         }
       }
-    } catch {
+    } catch (error) {
       // non-fatal — WT map simply shows no markers if unavailable
+      console.warn('Failed to load World Tree map data:', error)
     }
   }
 
