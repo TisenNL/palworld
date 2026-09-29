@@ -133,9 +133,9 @@ export const useChecklistStore = defineStore('checklist', () => {
   }
 
   function scheduleSave(): void {
-    const next = payload()
     window.clearTimeout(saveTimer)
     saveTimer = window.setTimeout(() => {
+      const next = payload()
       void api.saveProgress(next).catch(() => undefined)
     }, 350)
   }
@@ -227,7 +227,17 @@ export const useChecklistStore = defineStore('checklist', () => {
     if (!initialized.value) return
     window.clearTimeout(saveTimer)
     const body = JSON.stringify(payload())
-    navigator.sendBeacon('/progress', new Blob([body], { type: 'application/json' }))
+    const blob = new Blob([body], { type: 'application/json' })
+    if (blob.size > 60 * 1024) {
+      void fetch('/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true,
+      }).catch(() => undefined)
+    } else {
+      navigator.sendBeacon('/progress', blob)
+    }
   }
 
   return {
