@@ -149,6 +149,20 @@ describe('LRU cache', () => {
     expect(cache.has('a')).toBe(true)
     expect(cache.has('b')).toBe(false)
   })
+
+  it('supports falsy values like null, 0, false, and empty string', () => {
+    const cache = new LruCache<string, unknown>(5)
+    cache.set('zero', 0)
+    cache.set('bool', false)
+    cache.set('str', '')
+    cache.set('nil', null)
+
+    expect(cache.get('zero')).toBe(0)
+    expect(cache.get('bool')).toBe(false)
+    expect(cache.get('str')).toBe('')
+    expect(cache.get('nil')).toBeNull()
+    expect(cache.get('missing')).toBeUndefined()
+  })
 })
 
 describe('World Tree map data', () => {

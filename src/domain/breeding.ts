@@ -42,7 +42,10 @@ export function createBreedingEngine(data: BreedData) {
       // ou estão equidistantes do power alvo (ex: power=100, candidates com rank=90 e 110).
       if (
         nextDistance < distance ||
-        (nextDistance === distance && candidate.rank > (best?.rank ?? -Infinity))
+        (nextDistance === distance &&
+          (candidate.rank > (best?.rank ?? -Number.POSITIVE_INFINITY) ||
+            (candidate.rank === (best?.rank ?? -Number.POSITIVE_INFINITY) &&
+              candidate.code.localeCompare(best?.code ?? '') < 0)))
       ) {
         best = candidate
         distance = nextDistance

@@ -30,6 +30,12 @@ export type BreedingWorkerRequest =
       data: BreedData
       owned: string[]
     }
+  | {
+      id: number
+      action: 'cancel'
+    }
+
+let currentCancelId: number | null = null
 
 let cancelFlag = false
 let timeoutId: number | undefined

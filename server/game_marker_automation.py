@@ -105,8 +105,11 @@ def solve_mouse_delta(
 
 def largest_monitor_bounds() -> tuple[int, int, int, int]:
     """Largest monitor as left, top, width, height (same source as ROI helpers)."""
+    if not hasattr(ctypes, "windll"):
+        return 0, 0, 1920, 1080
     rects: list[tuple[int, int, int, int]] = []
-    enum_proc = ctypes.WINFUNCTYPE(
+    win_func = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)
+    enum_proc = win_func(
         ctypes.c_bool,
         ctypes.c_ulong,
         ctypes.c_ulong,
@@ -214,11 +217,13 @@ def _mouse_from_cache(
 class WindowsGameInput:
     def __init__(self, window_name: str = "Palworld") -> None:
         self.window_name = window_name.casefold()
-        self.user32 = ctypes.windll.user32
-        self.kernel32 = ctypes.windll.kernel32
-        self.kernel32.OpenProcess.restype = wintypes.HANDLE
-        self.user32.GetForegroundWindow.restype = wintypes.HWND
-        self.user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+        self.user32 = getattr(ctypes, "windll", None) and ctypes.windll.user32
+        self.kernel32 = getattr(ctypes, "windll", None) and ctypes.windll.kernel32
+        if self.kernel32:
+            self.kernel32.OpenProcess.restype = wintypes.HANDLE
+        if self.user32:
+            self.user32.GetForegroundWindow.restype = wintypes.HWND
+            self.user32.GetWindowThreadProcessId.restype = wintypes.DWORD
         self.timing = None
 
     def _t_collector(self):
@@ -728,9 +733,7 @@ class GameMarkerController:
     ) -> tuple[bool, Coordinate]:
         self._set_ocr_reason("cache_validate_mouse")
         mouse_x, mouse_y = mouse_vectors
-        # Rejeitar vetores degenerados e descartar cache imediatamente
         if math.hypot(*mouse_x) < 1e-6 or math.hypot(*mouse_y) < 1e-6:
-            self._discard_mouse_cache()
             return False, current
         anchor = self.game_input.cursor()
         pixels = MOUSE_VALIDATE_PIXELS
@@ -749,7 +752,9 @@ class GameMarkerController:
         alignment = (
             observed[0] * expected[0] + observed[1] * expected[1]
         ) / (math.hypot(*observed) * math.hypot(*expected))
-        return alignment >= MOUSE_VALIDATE_ALIGNMENT, restored
+        if alignment < MOUSE_VALIDATE_ALIGNMENT:
+            return False, restored
+        return True, restored
 
     def _discard_mouse_cache(self) -> None:
         self._cached_mouse_vectors = None
