@@ -57,10 +57,8 @@ export const useServerHudStore = defineStore('serverHud', () => {
   }
 
   async function pollGameMarker(): Promise<void> {
-    // Previne múltiplas chamadas simultâneas que criariam múltiplos timers
     if (pollingGameMarker) return
     pollingGameMarker = true
-    
     stopGameMarkerPolling()
     try {
       gameMarker.value = await api.getGameMarkerState()
@@ -75,10 +73,8 @@ export const useServerHudStore = defineStore('serverHud', () => {
   }
 
   async function pollMouseLoop(): Promise<void> {
-    // Previne múltiplas chamadas simultâneas que criariam múltiplos timers
     if (pollingMouseLoop) return
     pollingMouseLoop = true
-    
     stopMouseLoopPolling()
     try {
       mouseLoop.value = await api.getMouseLoopState()
