@@ -39,18 +39,54 @@ const CDN = (code: string): string =>
 // Source: paldb.cc partner skills — one pal per suitability, base-only, no-stack
 
 const workPals: WorkPal[] = [
-  { name: 'Clovee',           code: 'CloverFairy',         suitability: 'Gathering',    suitIcon: '🌾' },
-  { name: 'Eikthyrdeer Terra',code: 'Deer_Ground',          suitability: 'Lumbering',    suitIcon: '🪵', note: 'Rideable · double jump' },
-  { name: 'Tetroise',         code: 'CubeTurtle',           suitability: 'Mining',       suitIcon: '⛏️', note: 'Rideable · Tech 48' },
-  { name: 'Amione',           code: 'ClioneTwins',          suitability: 'Watering',     suitIcon: '💧' },
-  { name: 'Petallia',         code: 'FlowerDoll',           suitability: 'Planting',     suitIcon: '🌱', note: 'Heals 75–85% HP on activation' },
-  { name: 'Cinnamoth',        code: 'CuteButterfly',        suitability: 'Farming',      suitIcon: '🐾', note: 'Attacks with Poison Fog' },
-  { name: 'Ribbuny',          code: 'PinkRabbit',           suitability: 'Handiwork',    suitIcon: '🔨', note: '+15–30% Atk to Neutral Pals in party' },
-  { name: 'Katress Ignis',    code: 'CatMage_Fire',         suitability: 'Kindling',     suitIcon: '🔥' },
-  { name: 'Puffolt',          code: 'ElecPomeranian',       suitability: 'Electricity',  suitIcon: '⚡' },
-  { name: 'Smokie Cryst',     code: 'BlackPuppy_Ice',       suitability: 'Cooling',      suitIcon: '❄️' },
-  { name: 'Mycora',           code: 'MushroomLady',         suitability: 'Medicine',     suitIcon: '💊' },
-  { name: 'Wumpo',            code: 'Yeti',                 suitability: 'Transporting', suitIcon: '📦', note: 'Rideable · Tech 45' },
+  { name: 'Clovee', code: 'CloverFairy', suitability: 'Gathering', suitIcon: '🌾' },
+  {
+    name: 'Eikthyrdeer Terra',
+    code: 'Deer_Ground',
+    suitability: 'Lumbering',
+    suitIcon: '🪵',
+    note: 'Rideable · double jump',
+  },
+  {
+    name: 'Tetroise',
+    code: 'CubeTurtle',
+    suitability: 'Mining',
+    suitIcon: '⛏️',
+    note: 'Rideable · Tech 48',
+  },
+  { name: 'Amione', code: 'ClioneTwins', suitability: 'Watering', suitIcon: '💧' },
+  {
+    name: 'Petallia',
+    code: 'FlowerDoll',
+    suitability: 'Planting',
+    suitIcon: '🌱',
+    note: 'Heals 75–85% HP on activation',
+  },
+  {
+    name: 'Cinnamoth',
+    code: 'CuteButterfly',
+    suitability: 'Farming',
+    suitIcon: '🐾',
+    note: 'Attacks with Poison Fog',
+  },
+  {
+    name: 'Ribbuny',
+    code: 'PinkRabbit',
+    suitability: 'Handiwork',
+    suitIcon: '🔨',
+    note: '+15–30% Atk to Neutral Pals in party',
+  },
+  { name: 'Katress Ignis', code: 'CatMage_Fire', suitability: 'Kindling', suitIcon: '🔥' },
+  { name: 'Puffolt', code: 'ElecPomeranian', suitability: 'Electricity', suitIcon: '⚡' },
+  { name: 'Smokie Cryst', code: 'BlackPuppy_Ice', suitability: 'Cooling', suitIcon: '❄️' },
+  { name: 'Mycora', code: 'MushroomLady', suitability: 'Medicine', suitIcon: '💊' },
+  {
+    name: 'Wumpo',
+    code: 'Yeti',
+    suitability: 'Transporting',
+    suitIcon: '📦',
+    note: 'Rideable · Tech 45',
+  },
 ]
 
 // ─── Drop Rate Boost data ─────────────────────────────────────────────────────
@@ -62,8 +98,8 @@ const elementGroups: ElementGroup[] = [
   {
     element: 'Fire',
     pals: [
-      { name: 'Penking',     code: 'CaptainPenguin' },
-      { name: 'Faleris Aqua',code: 'Horus_Water'    },
+      { name: 'Penking', code: 'CaptainPenguin' },
+      { name: 'Faleris Aqua', code: 'Horus_Water' },
     ],
   },
   {
@@ -78,7 +114,7 @@ const elementGroups: ElementGroup[] = [
     element: 'Electric',
     pals: [
       { name: 'Menasting Terra', code: 'DarkScorpion_Ground' },
-      { name: 'Menasting',       code: 'DarkScorpion'        },
+      { name: 'Menasting', code: 'DarkScorpion' },
     ],
   },
   {
@@ -93,7 +129,7 @@ const elementGroups: ElementGroup[] = [
     element: 'Dark',
     pals: [
       { name: 'Enchanted Sword', code: 'YakushimaMonster002' }, // ← FIXED (was in Dragon)
-      { name: 'Elphidran',       code: 'FairyDragon'         }, // ← FIXED (was in Dragon)
+      { name: 'Elphidran', code: 'FairyDragon' }, // ← FIXED (was in Dragon)
     ],
   },
   {
@@ -105,7 +141,7 @@ const elementGroups: ElementGroup[] = [
   {
     element: 'Neutral',
     pals: [
-      { name: 'Katress',        code: 'CatMage'        },
+      { name: 'Katress', code: 'CatMage' },
       { name: 'Blazehowl Noct', code: 'Manticore_Dark' },
     ],
   },
@@ -125,7 +161,6 @@ function isStrokeOnly(element: string) {
 <template>
   <div class="content-pane bb-pane">
     <div class="bb-wrap">
-
       <!-- ══ HEADER ══════════════════════════════════════════════════════════ -->
       <header class="bb-header">
         <div class="bb-title-row">
@@ -134,21 +169,40 @@ function isStrokeOnly(element: string) {
         </div>
         <div class="bb-rules">
           <span class="rule-chip">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <path
+                d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"
+              />
+            </svg>
             Work Suitability: <strong>+1 to all Pals at base</strong>
             <span class="rule-sep">·</span> base-only · no stack
           </span>
           <span class="rule-chip">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>
-            Drop Rate: <strong>40 – 80%</strong>
-            <span class="rule-sep">·</span> stacks with unique Pals
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <line x1="19" y1="5" x2="5" y2="19" />
+              <circle cx="6.5" cy="6.5" r="2.5" />
+              <circle cx="17.5" cy="17.5" r="2.5" />
+            </svg>
+            Drop Rate: <strong>40 – 80%</strong> <span class="rule-sep">·</span> stacks with unique
+            Pals
           </span>
         </div>
       </header>
 
       <!-- ══ BODY ════════════════════════════════════════════════════════════ -->
       <div class="bb-body">
-
         <!-- ── LEFT PANEL: Work Suitability ─────────────────────────────── -->
         <section class="bb-panel bb-panel--work">
           <div class="panel-accent panel-accent--work" aria-hidden="true" />
@@ -159,12 +213,7 @@ function isStrokeOnly(element: string) {
           </div>
 
           <div class="work-grid">
-            <div
-              v-for="pal in workPals"
-              :key="pal.code"
-              class="work-card"
-              :title="pal.note"
-            >
+            <div v-for="pal in workPals" :key="pal.code" class="work-card" :title="pal.note">
               <div class="work-icon-wrap">
                 <SafeImage
                   :src="CDN(pal.code)"
@@ -200,10 +249,10 @@ function isStrokeOnly(element: string) {
               :key="group.element"
               class="el-card"
               :style="{
-                '--el':        theme(group.element).color,
+                '--el': theme(group.element).color,
                 '--el-strong': theme(group.element).colorStrong,
-                '--el-glow':   theme(group.element).glow,
-                '--el-grad':   theme(group.element).gradient,
+                '--el-glow': theme(group.element).glow,
+                '--el-grad': theme(group.element).gradient,
               }"
             >
               <!-- Radial glow behind pals -->
@@ -226,11 +275,7 @@ function isStrokeOnly(element: string) {
 
               <!-- Pals -->
               <div class="el-pals" :class="{ 'el-pals--single': group.pals.length === 1 }">
-                <div
-                  v-for="pal in group.pals"
-                  :key="pal.code"
-                  class="el-pal"
-                >
+                <div v-for="pal in group.pals" :key="pal.code" class="el-pal">
                   <div class="el-pal-icon">
                     <SafeImage
                       :src="CDN(pal.code)"
@@ -245,10 +290,12 @@ function isStrokeOnly(element: string) {
             </div>
           </div>
         </section>
-
-      </div><!-- /bb-body -->
-    </div><!-- /bb-wrap -->
-  </div><!-- /bb-pane -->
+      </div>
+      <!-- /bb-body -->
+    </div>
+    <!-- /bb-wrap -->
+  </div>
+  <!-- /bb-pane -->
 </template>
 
 <style scoped>
@@ -323,7 +370,9 @@ function isStrokeOnly(element: string) {
   color: var(--muted, #9aabc2);
   font-size: clamp(0.68rem, 1.2vmin, 0.78rem);
   white-space: nowrap;
-  transition: border-color 0.2s, background 0.2s;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
 }
 
 .rule-chip svg {
@@ -384,13 +433,13 @@ function isStrokeOnly(element: string) {
 .panel-accent--work {
   background:
     radial-gradient(ellipse at 100% 0%, rgba(14, 165, 233, 0.12) 0%, transparent 50%),
-    radial-gradient(ellipse at 0% 100%, rgba(129, 140, 248, 0.10) 0%, transparent 50%);
+    radial-gradient(ellipse at 0% 100%, rgba(129, 140, 248, 0.1) 0%, transparent 50%);
 }
 
 .panel-accent--drop {
   background:
     radial-gradient(ellipse at 100% 0%, rgba(236, 72, 153, 0.12) 0%, transparent 50%),
-    radial-gradient(ellipse at 0% 100%, rgba(139, 92, 246, 0.10) 0%, transparent 50%);
+    radial-gradient(ellipse at 0% 100%, rgba(139, 92, 246, 0.1) 0%, transparent 50%);
 }
 
 .panel-header {
@@ -566,9 +615,7 @@ function isStrokeOnly(element: string) {
   /* Dynamic border from --el */
   border: 1px solid color-mix(in srgb, var(--el) 28%, rgba(255, 255, 255, 0.06));
   /* Gradient background from elementTheme */
-  background:
-    var(--el-grad),
-    rgba(8, 14, 28, 0.58);
+  background: var(--el-grad), rgba(8, 14, 28, 0.58);
   overflow: hidden;
   transition:
     border-color 0.22s ease,
@@ -673,7 +720,9 @@ function isStrokeOnly(element: string) {
   overflow: hidden;
   /* Glow ring matching element */
   filter: drop-shadow(0 2px 8px color-mix(in srgb, var(--el) 40%, transparent));
-  transition: filter 0.22s ease, transform 0.18s ease;
+  transition:
+    filter 0.22s ease,
+    transform 0.18s ease;
 }
 
 .el-card:hover .el-pal-img {

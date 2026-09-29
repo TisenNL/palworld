@@ -1,7 +1,7 @@
-﻿import { defineStore } from 'pinia'
+import { defineStore } from 'pinia'
 import { computed, reactive, ref, shallowRef } from 'vue'
 
-import { layerItems } from '@/domain/layers'
+import { buildWtLayers, layerItems } from '@/domain/layers'
 import { api } from '@/services/api'
 import type { CoordinateItem, MapLayer, MapMarker, WtData } from '@/types/data'
 import { useChecklistStore } from './checklist'
@@ -171,6 +171,10 @@ export const useMapStore = defineStore('map', () => {
   }
 
   function saveCamera(): void {
+    if (preferences.values.activeMap === 'world-tree') {
+      saveWtCamera()
+      return
+    }
     preferences.values.mapCam = {
       ix: camera.x,
       iy: camera.y,
@@ -211,37 +215,53 @@ export const useMapStore = defineStore('map', () => {
   async function loadWtData(): Promise<void> {
     if (wtData.value) return
     try {
-      wtData.value = await api.getWtData()
+      const data = await api.getWtData()
+      wtData.value = data
+      // Initialize visibility defaults for WT layers (default: all visible)
+      const wtLayerList = buildWtLayers(data)
+      for (const layer of wtLayerList) {
+        if (typeof preferences.values.mapLayers[layer.id] !== 'boolean') {
+          preferences.values.mapLayers[layer.id] = true
+        }
+      }
     } catch {
       // non-fatal — WT map simply shows no markers if unavailable
     }
   }
 
-  /** Flat list of all WT markers (read-only, no checkboxes for now). */
+  /** Computed WT layers built from wtData (mirrors checklist.layers for Palpagos). */
+  const wtLayers = computed<MapLayer[]>(() => {
+    const data = wtData.value
+    if (!data) return []
+    return buildWtLayers(data)
+  })
+
+  /** Flat list of all WT markers, filtered by per-layer visibility preferences. */
   const wtMarkers = computed<MapMarker[]>(() => {
     const data = wtData.value
     if (!data) return []
     const out: MapMarker[] = []
-
-    const push = (storage: 'alphas' | 'travel' | 'collectibles', color: string) => {
-      for (const item of data[storage]) {
-        const label = item.name ?? item.type ?? storage
+    for (const layer of wtLayers.value) {
+      // Respect visibility toggle (default: show all layers until user hides one)
+      if (preferences.values.mapLayers[layer.id] === false) continue
+      for (const item of layerItems(data, layer)) {
+        const isAlpha = layer.storage === 'alphas'
+        const label = isAlpha
+          ? `${item.name ?? item.type ?? 'Alpha'} Lv.${item.lv ?? '?'}`
+          : (item.name ?? item.type ?? layer.label)
+        const done = checklist.isDone(layer.storage, item.id)
         out.push({
-          id: `wt:${storage}:${item.id}`,
-          layerId: `wt-${storage}`,
-          storage,
+          id: `wt:${layer.id}:${item.id}`,
+          layerId: layer.id,
+          storage: layer.storage,
           item,
           label,
-          color,
-          done: false,
+          color: layer.color,
+          done,
+          ...(item.icon ? { iconUrl: item.icon } : {}),
         })
       }
     }
-
-    push('alphas',      '#34d399')
-    push('travel',      '#22d3ee')
-    push('collectibles','#a78bfa')
-
     return out
   })
 
@@ -254,8 +274,12 @@ export const useMapStore = defineStore('map', () => {
     if (!saved) return
     const { ix: x, iy: y, scaleCss: scale } = saved
     if (
-      !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale) ||
-      scale <= 0 || Math.abs(x) > 200_000 || Math.abs(y) > 200_000
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      !Number.isFinite(scale) ||
+      scale <= 0 ||
+      Math.abs(x) > 200_000 ||
+      Math.abs(y) > 200_000
     ) {
       preferences.values.wtMapCam = null
       return
@@ -295,6 +319,7 @@ export const useMapStore = defineStore('map', () => {
     camera,
     markers,
     wtMarkers,
+    wtLayers,
     activeMap,
     searchResults,
     restoreCamera,

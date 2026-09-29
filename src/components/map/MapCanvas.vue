@@ -232,10 +232,7 @@ function pumpIcons(): void {
 function drawTiles(context: CanvasRenderingContext2D, width: number, height: number): void {
   const proj = activeProjection()
   const ideal = proj.worldZoom + Math.log2(props.camera.scale)
-  const zoom = Math.max(
-    proj.minTileZoom,
-    Math.min(proj.maxTileZoom, Math.round(ideal)),
-  )
+  const zoom = Math.max(proj.minTileZoom, Math.min(proj.maxTileZoom, Math.round(ideal)))
   const worldPerTile = proj.tileSize * 2 ** (proj.worldZoom - zoom)
   const minX = Math.max(0, Math.floor(-props.camera.x / props.camera.scale / worldPerTile) - 1)
   const minY = Math.max(0, Math.floor(-props.camera.y / props.camera.scale / worldPerTile) - 1)
@@ -278,8 +275,11 @@ function drawMarkers(context: CanvasRenderingContext2D, width: number, height: n
   for (const marker of props.markers) {
     const point = markerPosition(marker)
     const isAlpha = marker.storage === 'alphas'
-    const size = isAlpha ? Math.max(markerSize, Math.min(48, 28 + props.camera.scale * 28)) : markerSize
-    if (point.x < -size || point.y < -size || point.x > width + size || point.y > height + size) continue
+    const size = isAlpha
+      ? Math.max(markerSize, Math.min(48, 28 + props.camera.scale * 28))
+      : markerSize
+    if (point.x < -size || point.y < -size || point.x > width + size || point.y > height + size)
+      continue
     context.save()
     if (marker.done) context.globalAlpha = 0.5
     const icon = marker.iconUrl ? iconCache.get(marker.iconUrl) : undefined
@@ -301,7 +301,13 @@ function drawMarkers(context: CanvasRenderingContext2D, width: number, height: n
       context.imageSmoothingEnabled = true
       context.imageSmoothingQuality = 'high'
       const pad = isAlpha ? size * 0.12 : 0
-      context.drawImage(icon, point.x - size / 2 + pad, point.y - size / 2 + pad, size - pad * 2, size - pad * 2)
+      context.drawImage(
+        icon,
+        point.x - size / 2 + pad,
+        point.y - size / 2 + pad,
+        size - pad * 2,
+        size - pad * 2,
+      )
     } else {
       context.beginPath()
       context.fillStyle = marker.color
@@ -367,9 +373,7 @@ function findMarker(x: number, y: number): MapMarker | null {
     const marker = props.markers[index]!
     const point = markerPosition(marker)
     const hit =
-      marker.storage === 'alphas'
-        ? Math.max(24, Math.min(36, 26 + props.camera.scale * 20))
-        : 20
+      marker.storage === 'alphas' ? Math.max(24, Math.min(36, 26 + props.camera.scale * 20)) : 20
     const next = Math.hypot(point.x - x, point.y - y)
     if (next < Math.min(distance, hit)) {
       nearest = marker
@@ -520,17 +524,21 @@ function coordinatesAt(x: number, y: number): { x: number; y: number } {
 
 defineExpose({ fitMarkers, centerGame, coordinatesAt, redraw: scheduleDraw })
 
-watch(() => [props.camera.x, props.camera.y, props.camera.scale, props.markers, props.mapZone], (newVal, oldVal) => {
-  // Clear tile cache when switching maps to avoid showing wrong tiles
-  if (Array.isArray(oldVal) && Array.isArray(newVal) && oldVal[4] !== newVal[4]) {
-    tileCache.clear()
-    failedTiles.clear()
-    hasVisibleTile.value = false
-  }
-  scheduleDraw()
-}, {
-  deep: false,
-})
+watch(
+  () => [props.camera.x, props.camera.y, props.camera.scale, props.markers, props.mapZone],
+  (newVal, oldVal) => {
+    // Clear tile cache when switching maps to avoid showing wrong tiles
+    if (Array.isArray(oldVal) && Array.isArray(newVal) && oldVal[4] !== newVal[4]) {
+      tileCache.clear()
+      failedTiles.clear()
+      hasVisibleTile.value = false
+    }
+    scheduleDraw()
+  },
+  {
+    deep: false,
+  },
+)
 
 // Redraw when selection changes (deep watch needed because reactive Set mutates in place)
 watch(() => props.selectedIds, scheduleDraw, { deep: true })

@@ -1,15 +1,18 @@
-import type { GameData, MapLayer } from '@/types/data'
+import type { GameData, MapLayer, WtData } from '@/types/data'
 
 export const layerGroups = [
   { id: 'combat', label: 'Combat and bosses' },
   { id: 'explore', label: 'Exploration' },
   { id: 'effigies', label: 'Effigies' },
-  { id: 'chests', label: 'Chests and rewards' },
-  { id: 'eggs', label: 'Eggs' },
   { id: 'ores', label: 'Ores and crystals' },
   { id: 'gather', label: 'Gathering' },
-  { id: 'water', label: 'Fishing and salvage' },
   { id: 'notes', label: 'Notes and maps' },
+] as const
+
+export const wtLayerGroups = [
+  { id: 'wt-combat', label: 'Combat and bosses' },
+  { id: 'wt-travel', label: 'Fast Travel' },
+  { id: 'wt-collectibles', label: 'Collectibles' },
 ] as const
 
 const baseLayers: Array<Omit<MapLayer, 'group'>> = [
@@ -134,11 +137,7 @@ function groupFor(layer: Omit<MapLayer, 'group'>): string {
   )
     return layer.storage === 'journals' ? 'notes' : 'explore'
   const type = layer.typeIn?.[0] ?? ''
-  if (/^Egg\b/.test(type)) return 'eggs'
   if (/Ore|Coal|Sulfur|Quartz|Crystal|Chromite|Soralite|Paloxite/.test(type)) return 'ores'
-  if (/Chest|Pile|Drop|Loot Tower/.test(type)) return 'chests'
-  if (/Fishing|Salvage/.test(type)) return 'water'
-  if (/Note|Treasure Map/.test(type)) return 'notes'
   return 'gather'
 }
 
@@ -174,4 +173,64 @@ export function layerItems(data: GameData, layer: MapLayer) {
     if (layer.kindIn && !layer.kindIn.includes(item.kind ?? '')) return false
     return true
   })
+}
+
+// ── World Tree layers ─────────────────────────────────────────────────────────
+
+const wtLootColors: Record<string, string> = {
+  'World Tree Ore': '#65a30d',
+  'Egg (World Tree)': '#a3e635',
+  Paloxite: '#818cf8',
+  Junk: '#64748b',
+  Chest: '#fbbf24',
+  'Fruit Tree': '#84cc16',
+  'Lifmunk Effigy': '#86efac',
+  'Cattiva Effigy': '#fca5a5',
+  'Yakumo Effigy': '#fde68a',
+}
+
+function wtGroupFor(layer: Omit<MapLayer, 'group'>): string {
+  if (layer.storage === 'alphas') return 'wt-combat'
+  if (layer.storage === 'travel') return 'wt-travel'
+  return 'wt-collectibles'
+}
+
+/**
+ * Build layer definitions for the World Tree map.
+ * Uses the same GameData-compatible shape as Palpagos so `layerItems()` works unmodified.
+ */
+export function buildWtLayers(data: WtData): MapLayer[] {
+  const layers: Array<Omit<MapLayer, 'group'>> = [
+    { id: 'wt-alphas', label: 'Alpha Pals', color: '#34d399', storage: 'alphas' },
+    {
+      id: 'wt-travel-fast',
+      label: 'Fast Travel',
+      iconKey: 'Fast Travel',
+      color: '#22d3ee',
+      storage: 'travel',
+      typeIn: ['Fast Travel'],
+    },
+    {
+      id: 'wt-travel-watch',
+      label: 'Watchtower',
+      iconKey: 'Watchtower',
+      color: '#67e8f9',
+      storage: 'travel',
+      typeIn: ['Watchtower'],
+    },
+  ]
+
+  // Dynamically add one layer per collectible type present in WT data
+  for (const type of new Set(data.collectibles.map((item) => item.type).filter(Boolean))) {
+    if (!type) continue
+    layers.push({
+      id: `wt-loot-${slug(type)}`,
+      label: type,
+      color: wtLootColors[type] ?? (/^Egg/.test(type) ? '#a3e635' : '#94a3b8'),
+      storage: 'collectibles',
+      typeIn: [type],
+    })
+  }
+
+  return layers.map((layer) => ({ ...layer, group: wtGroupFor(layer) }))
 }

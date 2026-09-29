@@ -18,7 +18,10 @@ function clampNumber(value: unknown): number {
   return Number.isFinite(next) && next > 0 ? next : 0
 }
 
-function mergeValues(base: CakeValues, patch?: Partial<CakeValues> | Record<string, number>): CakeValues {
+function mergeValues(
+  base: CakeValues,
+  patch?: Partial<CakeValues> | Record<string, number>,
+): CakeValues {
   const next = { ...base }
   if (!patch) return next
   for (const key of Object.keys(next) as Array<keyof CakeValues>) {

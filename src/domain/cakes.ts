@@ -165,8 +165,7 @@ export function calculateCakes(
   stock: CakeValues,
   prices: CakeValues,
 ): CakeCalculation {
-  const unitCost =
-    recipe.ingredients.reduce((sum, item) => sum + item.per * prices[item.price], 0)
+  const unitCost = recipe.ingredients.reduce((sum, item) => sum + item.per * prices[item.price], 0)
   const honeyCap =
     recipe.honeyPer > 0 && stock.honey > 0 ? Math.floor(stock.honey / recipe.honeyPer) : null
   const flourCap = Math.floor(stock.flour / recipe.flourPer)
@@ -181,11 +180,7 @@ export function calculateCakes(
   while (low <= high) {
     const middle = (low + high) >> 1
     const purchase = purchasesFor(middle, recipe, stock, prices)
-    if (
-      purchase.spent <= gold &&
-      middle <= flourCap &&
-      (honeyCap === null || middle <= honeyCap)
-    ) {
+    if (purchase.spent <= gold && middle <= flourCap && (honeyCap === null || middle <= honeyCap)) {
       maximum = middle
       low = middle + 1
     } else {

@@ -212,7 +212,8 @@ export const useChecklistStore = defineStore('checklist', () => {
         }
       }
       initialized.value = true
-      const needsCakeMirror = !current?.cake && Boolean(localStorage.getItem('palworld-cake-state-v1'))
+      const needsCakeMirror =
+        !current?.cake && Boolean(localStorage.getItem('palworld-cake-state-v1'))
       if (recoveredBreedSelection || needsCakeMirror) scheduleSave()
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Failed to load application data'

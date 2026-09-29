@@ -11,7 +11,7 @@ import { useRouter } from 'vue-router'
 import SafeImage from '@/components/common/SafeImage.vue'
 import CompactPanel from '@/components/layout/CompactPanel.vue'
 import MapCanvas from '@/components/map/MapCanvas.vue'
-import { layerGroups } from '@/domain/layers'
+import { layerGroups, wtLayerGroups } from '@/domain/layers'
 import { parseCoordinates } from '@/domain/coordinates'
 import { useChecklistStore } from '@/stores/checklist'
 import { useMapStore } from '@/stores/map'
@@ -46,9 +46,12 @@ function setSearch(value: string): void {
   }, 180)
 }
 
-const visibleCount = computed(
-  () => checklist.layers.filter((layer) => preferences.values.mapLayers[layer.id]).length,
-)
+const visibleCount = computed(() => {
+  if (map.activeMap === 'world-tree') {
+    return map.wtLayers.filter((layer) => preferences.values.mapLayers[layer.id] !== false).length
+  }
+  return checklist.layers.filter((layer) => preferences.values.mapLayers[layer.id]).length
+})
 const layerCounts = computed(() => {
   const counts = new Map<string, number>()
   for (const entry of checklist.entries) {
@@ -61,6 +64,25 @@ const nearestMarker = computed(() =>
 )
 const searching = computed(() => map.search.trim().length >= 3)
 const selectionCount = computed(() => map.selectedIds.size)
+const totalLayersCount = computed(() =>
+  map.activeMap === 'world-tree' ? map.wtLayers.length : checklist.layers.length,
+)
+
+const wtBrowseGroup = ref('')
+
+function wtLayersForGroup(groupId: string) {
+  return map.wtLayers.filter((layer) => layer.group === groupId)
+}
+
+function toggleWtGroup(groupId: string, event: Event): void {
+  const open = (event.currentTarget as HTMLDetailsElement).open
+  if (open) wtBrowseGroup.value = groupId
+  else if (wtBrowseGroup.value === groupId) wtBrowseGroup.value = ''
+}
+
+function setAllWt(visible: boolean): void {
+  for (const layer of map.wtLayers) preferences.values.mapLayers[layer.id] = visible
+}
 
 function panelOpen(key: string, fallback = true): boolean {
   return preferences.values.sideBlockOpen[key] ?? fallback
@@ -444,11 +466,7 @@ void server.pollMouseLoop()
                   @update:model-value="toggleSearchResultDone(marker, Boolean($event))"
                   @click.stop
                 />
-                <button
-                  type="button"
-                  class="search-result-main"
-                  @click="focusSearchResult(marker)"
-                >
+                <button type="button" class="search-result-main" @click="focusSearchResult(marker)">
                   <span class="layer-swatch" :style="{ background: marker.color }" />
                   <span class="search-result-text">
                     <span class="search-result-label">{{ marker.label }}</span>
@@ -461,43 +479,92 @@ void server.pollMouseLoop()
           </template>
           <template v-else>
             <div class="quick-actions">
-              <Button label="All" size="small" text @click="setAll(true)" />
-              <Button label="Hide" size="small" text severity="secondary" @click="setAll(false)" />
+              <Button
+                label="All"
+                size="small"
+                text
+                @click="map.activeMap === 'world-tree' ? setAllWt(true) : setAll(true)"
+              />
+              <Button
+                label="Hide"
+                size="small"
+                text
+                severity="secondary"
+                @click="map.activeMap === 'world-tree' ? setAllWt(false) : setAll(false)"
+              />
             </div>
             <div class="category-accordions">
-              <details
-                v-for="group in layerGroups"
-                :key="group.id"
-                class="category-section"
-                :open="browseGroup === group.id"
-                @toggle="toggleGroup(group.id, $event)"
-              >
-                <summary>{{ group.label }}</summary>
-                <div class="layer-browser">
-                  <label
-                    v-for="layer in layersForGroup(group.id)"
-                    :key="layer.id"
-                    class="layer-check"
-                  >
-                    <Checkbox
-                      :model-value="preferences.values.mapLayers[layer.id]"
-                      binary
-                      @update:model-value="preferences.values.mapLayers[layer.id] = Boolean($event)"
-                    />
-                    <span class="layer-swatch" :style="{ background: layer.color }" />
-                    <SafeImage
-                      v-if="layer.iconUrl"
-                      class="layer-image"
-                      :src="layer.iconUrl"
-                      :fallback-label="layer.label"
-                    />
-                    <span class="layer-label">{{ layer.label }}</span>
-                    <span v-if="layer.label.endsWith(' Cluster')" class="layer-count">
-                      {{ layerCounts.get(layer.id) ?? 0 }}
-                    </span>
-                  </label>
-                </div>
-              </details>
+              <template v-if="map.activeMap === 'world-tree'">
+                <details
+                  v-for="group in wtLayerGroups"
+                  :key="group.id"
+                  class="category-section"
+                  :open="wtBrowseGroup === group.id"
+                  @toggle="toggleWtGroup(group.id, $event)"
+                >
+                  <summary>{{ group.label }}</summary>
+                  <div class="layer-browser">
+                    <label
+                      v-for="layer in wtLayersForGroup(group.id)"
+                      :key="layer.id"
+                      class="layer-check"
+                    >
+                      <Checkbox
+                        :model-value="preferences.values.mapLayers[layer.id]"
+                        binary
+                        @update:model-value="
+                          preferences.values.mapLayers[layer.id] = Boolean($event)
+                        "
+                      />
+                      <span class="layer-swatch" :style="{ background: layer.color }" />
+                      <SafeImage
+                        v-if="layer.iconUrl"
+                        class="layer-image"
+                        :src="layer.iconUrl"
+                        :fallback-label="layer.label"
+                      />
+                      <span class="layer-label">{{ layer.label }}</span>
+                    </label>
+                  </div>
+                </details>
+              </template>
+              <template v-else>
+                <details
+                  v-for="group in layerGroups"
+                  :key="group.id"
+                  class="category-section"
+                  :open="browseGroup === group.id"
+                  @toggle="toggleGroup(group.id, $event)"
+                >
+                  <summary>{{ group.label }}</summary>
+                  <div class="layer-browser">
+                    <label
+                      v-for="layer in layersForGroup(group.id)"
+                      :key="layer.id"
+                      class="layer-check"
+                    >
+                      <Checkbox
+                        :model-value="preferences.values.mapLayers[layer.id]"
+                        binary
+                        @update:model-value="
+                          preferences.values.mapLayers[layer.id] = Boolean($event)
+                        "
+                      />
+                      <span class="layer-swatch" :style="{ background: layer.color }" />
+                      <SafeImage
+                        v-if="layer.iconUrl"
+                        class="layer-image"
+                        :src="layer.iconUrl"
+                        :fallback-label="layer.label"
+                      />
+                      <span class="layer-label">{{ layer.label }}</span>
+                      <span v-if="layer.label.endsWith(' Cluster')" class="layer-count">
+                        {{ layerCounts.get(layer.id) ?? 0 }}
+                      </span>
+                    </label>
+                  </div>
+                </details>
+              </template>
             </div>
           </template>
         </CompactPanel>
@@ -641,7 +708,7 @@ void server.pollMouseLoop()
             server.online ? 'Server connected' : 'Server offline'
           }}</span
         >
-        <span>{{ visibleCount }}/{{ checklist.layers.length }}</span>
+        <span>{{ visibleCount }}/{{ totalLayersCount }}</span>
       </div>
     </aside>
 
@@ -759,7 +826,10 @@ void server.pollMouseLoop()
   font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
 }
 
 .map-btn:hover {
@@ -774,7 +844,8 @@ void server.pollMouseLoop()
   box-shadow: 0 4px 12px rgba(14, 165, 233, 0.24);
 }
 
-.quick-actions {  display: grid;
+.quick-actions {
+  display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 5px;
   margin: 5px 0;

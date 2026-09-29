@@ -351,7 +351,11 @@ function applyPurchase(): void {
   inset: -10% 10% auto;
   height: 280px;
   background:
-    radial-gradient(ellipse at 30% 40%, color-mix(in srgb, var(--cake-tint) 28%, transparent), transparent 55%),
+    radial-gradient(
+      ellipse at 30% 40%,
+      color-mix(in srgb, var(--cake-tint) 28%, transparent),
+      transparent 55%
+    ),
     radial-gradient(ellipse at 75% 20%, rgba(251, 191, 36, 0.16), transparent 50%);
   filter: blur(8px);
   pointer-events: none;
@@ -490,9 +494,12 @@ function applyPurchase(): void {
   border: 1px solid color-mix(in srgb, var(--cake-tint) 30%, var(--border));
   border-radius: var(--radius);
   background:
-    radial-gradient(circle at 80% 0%, color-mix(in srgb, var(--cake-tint) 22%, transparent), transparent 45%),
-    linear-gradient(165deg, rgba(255, 255, 255, 0.04), transparent 40%),
-    #0c1424;
+    radial-gradient(
+      circle at 80% 0%,
+      color-mix(in srgb, var(--cake-tint) 22%, transparent),
+      transparent 45%
+    ),
+    linear-gradient(165deg, rgba(255, 255, 255, 0.04), transparent 40%), #0c1424;
   box-shadow: 0 18px 40px rgba(2, 6, 23, 0.35);
   overflow: hidden;
 }
@@ -741,9 +748,7 @@ function applyPurchase(): void {
   height: 28px;
   overflow: hidden;
   border-radius: 10px;
-  background:
-    radial-gradient(circle at 30% 30%, #fff8, transparent 40%),
-    var(--item-tint);
+  background: radial-gradient(circle at 30% 30%, #fff8, transparent 40%), var(--item-tint);
   box-shadow: 0 6px 14px color-mix(in srgb, var(--item-tint) 35%, transparent);
 }
 

@@ -6,7 +6,7 @@ import pluginVue from 'eslint-plugin-vue'
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'tools/**', '*.js'],
+    ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'tools/**', '**/*.js'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

@@ -72,8 +72,7 @@ export const ELEMENT_THEME: Record<string, ElementTheme> = {
     glow: 'radial-gradient(circle at 50% 60%, rgba(103,232,249,0.40) 0%, transparent 70%)',
     gradient: 'radial-gradient(ellipse at 0% 100%, rgba(103,232,249,0.12) 0%, transparent 55%)',
     // Snowflake (simplified 6-pointed)
-    svgPath:
-      'M12 2v20M2 12h20M5.636 5.636l12.728 12.728M18.364 5.636 5.636 18.364',
+    svgPath: 'M12 2v20M2 12h20M5.636 5.636l12.728 12.728M18.364 5.636 5.636 18.364',
     label: 'Ice',
   },
   Dark: {
