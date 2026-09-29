@@ -10,8 +10,8 @@ export class LruCache<K, V> {
   }
 
   get(key: K): V | undefined {
-    const value = this.entries.get(key)
-    if (value === undefined) return undefined
+    if (!this.entries.has(key)) return undefined
+    const value = this.entries.get(key)!
     this.entries.delete(key)
     this.entries.set(key, value)
     return value

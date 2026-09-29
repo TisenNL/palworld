@@ -15,6 +15,8 @@ export const useServerHudStore = defineStore('serverHud', () => {
   let timer: number | undefined
   let gameMarkerTimer: number | undefined
   let mouseLoopTimer: number | undefined
+  let pollingGameMarker = false
+  let pollingMouseLoop = false
 
   const online = computed(() => health.value?.ok === true)
   const gameMarkerBusy = computed(() => gameMarker.value?.active === true)
@@ -55,6 +57,10 @@ export const useServerHudStore = defineStore('serverHud', () => {
   }
 
   async function pollGameMarker(): Promise<void> {
+    // Previne múltiplas chamadas simultâneas que criariam múltiplos timers
+    if (pollingGameMarker) return
+    pollingGameMarker = true
+    
     stopGameMarkerPolling()
     try {
       gameMarker.value = await api.getGameMarkerState()
@@ -63,10 +69,16 @@ export const useServerHudStore = defineStore('serverHud', () => {
       }
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Game marker status failed'
+    } finally {
+      pollingGameMarker = false
     }
   }
 
   async function pollMouseLoop(): Promise<void> {
+    // Previne múltiplas chamadas simultâneas que criariam múltiplos timers
+    if (pollingMouseLoop) return
+    pollingMouseLoop = true
+    
     stopMouseLoopPolling()
     try {
       mouseLoop.value = await api.getMouseLoopState()
@@ -75,6 +87,8 @@ export const useServerHudStore = defineStore('serverHud', () => {
       }
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Mouse loop status failed'
+    } finally {
+      pollingMouseLoop = false
     }
   }
 

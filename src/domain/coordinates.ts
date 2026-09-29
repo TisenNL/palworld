@@ -28,9 +28,9 @@ export interface Point {
 
 export function parseCoordinates(text: string): Point | null {
   const match = text.trim().match(/(-?\d+(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d+(?:[.,]\d+)?)/)
-  if (!match) return null
-  const x = Number(match[1]!.replace(',', '.'))
-  const y = Number(match[2]!.replace(',', '.'))
+  if (!match || !match[1] || !match[2]) return null
+  const x = Number(match[1].replace(',', '.'))
+  const y = Number(match[2].replace(',', '.'))
   return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null
 }
 

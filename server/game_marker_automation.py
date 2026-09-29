@@ -203,7 +203,12 @@ def _mouse_from_cache(
         return None
     if len(mx) != 2 or len(my) != 2:
         return None
-    return (float(mx[0]), float(mx[1])), (float(my[0]), float(my[1]))
+    mouse_x = (float(mx[0]), float(mx[1]))
+    mouse_y = (float(my[0]), float(my[1]))
+    # Rejeitar vetores degenerados que não podem ser usados para calibração
+    if math.hypot(*mouse_x) < 1e-6 or math.hypot(*mouse_y) < 1e-6:
+        return None
+    return mouse_x, mouse_y
 
 
 class WindowsGameInput:
@@ -505,6 +510,7 @@ class GameMarkerController:
             return
 
         while time.perf_counter() < deadline:
+            # Permite cancelamento via Escape key ou flag de cancelamento
             self._check_safety(started)
             # Use self.sleep so timing is recorded and Esc cancel is honoured.
             self.sleep(PIXEL_STABLE_INTERVAL)
@@ -721,8 +727,10 @@ class GameMarkerController:
         started: float,
     ) -> tuple[bool, Coordinate]:
         self._set_ocr_reason("cache_validate_mouse")
-        mouse_x, _mouse_y = mouse_vectors
-        if math.hypot(*mouse_x) < 1e-6:
+        mouse_x, mouse_y = mouse_vectors
+        # Rejeitar vetores degenerados e descartar cache imediatamente
+        if math.hypot(*mouse_x) < 1e-6 or math.hypot(*mouse_y) < 1e-6:
+            self._discard_mouse_cache()
             return False, current
         anchor = self.game_input.cursor()
         pixels = MOUSE_VALIDATE_PIXELS
