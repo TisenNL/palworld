@@ -17,16 +17,16 @@ const coordinateSchema = z.object({
 })
 
 export const gameDataSchema = z.object({
-  alphas: z.array(coordinateSchema),
-  bounties: z.array(coordinateSchema),
-  effigies: z.array(coordinateSchema),
-  dungeons: z.array(coordinateSchema),
-  towers: z.array(coordinateSchema),
-  journals: z.array(coordinateSchema),
-  oilrigs: z.array(coordinateSchema),
-  camps: z.array(coordinateSchema),
-  collectibles: z.array(coordinateSchema),
-  travel: z.array(coordinateSchema),
+  alphas: z.array(coordinateSchema).default([]),
+  bounties: z.array(coordinateSchema).default([]),
+  effigies: z.array(coordinateSchema).default([]),
+  dungeons: z.array(coordinateSchema).default([]),
+  towers: z.array(coordinateSchema).default([]),
+  journals: z.array(coordinateSchema).default([]),
+  oilrigs: z.array(coordinateSchema).default([]),
+  camps: z.array(coordinateSchema).default([]),
+  collectibles: z.array(coordinateSchema).default([]),
+  travel: z.array(coordinateSchema).default([]),
 })
 
 export const palSchema = z.object({
