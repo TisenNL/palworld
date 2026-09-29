@@ -190,7 +190,7 @@ const wtLootColors: Record<string, string> = {
 }
 
 function wtGroupFor(layer: Omit<MapLayer, 'group'>): string {
-  if (layer.storage === 'alphas') return 'wt-combat'
+  if (['alphas', 'towers'].includes(layer.storage)) return 'wt-combat'
   if (layer.storage === 'travel') return 'wt-travel'
   return 'wt-collectibles'
 }
@@ -201,7 +201,21 @@ function wtGroupFor(layer: Omit<MapLayer, 'group'>): string {
  */
 export function buildWtLayers(data: WtData): MapLayer[] {
   const layers: Array<Omit<MapLayer, 'group'>> = [
-    { id: 'wt-alphas', label: 'Alpha Pals', color: '#34d399', storage: 'alphas' },
+    {
+      id: 'wt-alphas',
+      label: 'Alpha Pals',
+      iconKey: 'Alpha Pals',
+      color: '#34d399',
+      storage: 'alphas',
+    },
+    { id: 'wt-towers', label: 'Towers', iconKey: 'Towers', color: '#f472b6', storage: 'towers' },
+    {
+      id: 'wt-journals',
+      label: 'Journals',
+      iconKey: 'Journals',
+      color: '#eab308',
+      storage: 'journals',
+    },
     {
       id: 'wt-travel-fast',
       label: 'Fast Travel',
@@ -220,12 +234,25 @@ export function buildWtLayers(data: WtData): MapLayer[] {
     },
   ]
 
+  for (const type of new Set((data.effigies ?? []).map((item) => item.type).filter(Boolean))) {
+    if (!type) continue
+    layers.push({
+      id: `wt-effigy-${slug(type)}`,
+      label: `${type} Effigy`,
+      iconKey: `${type} Effigy`,
+      color: effigyColors[type] ?? '#86efac',
+      storage: 'effigies',
+      typeIn: [type],
+    })
+  }
+
   // Dynamically add one layer per collectible type present in WT data
-  for (const type of new Set(data.collectibles.map((item) => item.type).filter(Boolean))) {
+  for (const type of new Set((data.collectibles ?? []).map((item) => item.type).filter(Boolean))) {
     if (!type) continue
     layers.push({
       id: `wt-loot-${slug(type)}`,
       label: type,
+      iconKey: type,
       color: wtLootColors[type] ?? (/^Egg/.test(type) ? '#a3e635' : '#94a3b8'),
       storage: 'collectibles',
       typeIn: [type],

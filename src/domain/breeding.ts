@@ -39,7 +39,10 @@ export function createBreedingEngine(data: BreedData) {
       const nextDistance = Math.abs(candidate.rank - power)
       if (
         nextDistance < distance ||
-        (nextDistance === distance && candidate.rank > (best?.rank ?? -Infinity))
+        (nextDistance === distance &&
+          (candidate.rank > (best?.rank ?? -Number.POSITIVE_INFINITY) ||
+            (candidate.rank === (best?.rank ?? -Number.POSITIVE_INFINITY) &&
+              candidate.code.localeCompare(best?.code ?? '') < 0)))
       ) {
         best = candidate
         distance = nextDistance

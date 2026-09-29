@@ -24,12 +24,13 @@ vi.mock('primevue/inputnumber', () => ({
 
 import rawGameData from '../public/data.json'
 import rawMapIcons from '../public/map_icons.json'
+import rawWtData from '../public/wt-data.json'
 import { cakeRecipes, calculateCakes, emptyStock, priceDefaults } from '@/domain/cakes'
 import CakesView from '@/views/CakesView.vue'
 import { gameToImage, imageToGame, parseCoordinates } from '@/domain/coordinates'
-import { buildLayers } from '@/domain/layers'
+import { buildLayers, buildWtLayers } from '@/domain/layers'
 import { LruCache } from '@/domain/lruCache'
-import { gameDataSchema, mapIconsSchema } from '@/types/data'
+import { gameDataSchema, mapIconsSchema, wtDataSchema } from '@/types/data'
 
 describe('map coordinates', () => {
   it('accepts positive and negative coordinates', () => {
@@ -147,5 +148,39 @@ describe('LRU cache', () => {
     cache.set('c', 3)
     expect(cache.has('a')).toBe(true)
     expect(cache.has('b')).toBe(false)
+  })
+
+  it('supports falsy values like null, 0, false, and empty string', () => {
+    const cache = new LruCache<string, unknown>(5)
+    cache.set('zero', 0)
+    cache.set('bool', false)
+    cache.set('str', '')
+    cache.set('nil', null)
+
+    expect(cache.get('zero')).toBe(0)
+    expect(cache.get('bool')).toBe(false)
+    expect(cache.get('str')).toBe('')
+    expect(cache.get('nil')).toBeNull()
+    expect(cache.get('missing')).toBeUndefined()
+  })
+})
+
+describe('World Tree map data', () => {
+  it('parses wt-data.json cleanly even with missing optional categories', () => {
+    const wtData = wtDataSchema.parse(rawWtData)
+    expect(wtData.alphas.length).toBeGreaterThan(0)
+    expect(wtData.towers.length).toBeGreaterThan(0)
+    expect(wtData.travel.length).toBeGreaterThan(0)
+    expect(wtData.effigies.length).toBeGreaterThan(0)
+    expect(wtData.journals.length).toBeGreaterThan(0)
+    expect(wtData.collectibles.length).toBeGreaterThan(0)
+    expect(wtData.bounties).toEqual([])
+  })
+
+  it('builds World Tree layers from parsed data', () => {
+    const wtData = wtDataSchema.parse(rawWtData)
+    const layers = buildWtLayers(wtData)
+    expect(layers.length).toBeGreaterThan(3)
+    expect(layers).toContainEqual(expect.objectContaining({ id: 'wt-alphas', storage: 'alphas' }))
   })
 })

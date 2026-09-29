@@ -54,8 +54,8 @@ function readState(): CakeState {
 function writeState(state: CakeState): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  } catch {
-    /* quota / private mode — disco via /progress ainda cobre */
+  } catch (error) {
+    console.warn('Failed to persist cake state to localStorage:', error)
   }
 }
 

@@ -224,8 +224,9 @@ export const useMapStore = defineStore('map', () => {
           preferences.values.mapLayers[layer.id] = true
         }
       }
-    } catch {
+    } catch (error) {
       // non-fatal — WT map simply shows no markers if unavailable
+      console.warn('Failed to load World Tree map data:', error)
     }
   }
 
@@ -233,7 +234,10 @@ export const useMapStore = defineStore('map', () => {
   const wtLayers = computed<MapLayer[]>(() => {
     const data = wtData.value
     if (!data) return []
-    return buildWtLayers(data)
+    return buildWtLayers(data).map((layer) => {
+      const source = checklist.mapIcons?.icons[layer.iconKey ?? layer.label]
+      return source ? { ...layer, iconUrl: source } : layer
+    })
   })
 
   /** Flat list of all WT markers, filtered by per-layer visibility preferences. */
@@ -250,6 +254,9 @@ export const useMapStore = defineStore('map', () => {
           ? `${item.name ?? item.type ?? 'Alpha'} Lv.${item.lv ?? '?'}`
           : (item.name ?? item.type ?? layer.label)
         const done = checklist.isDone(layer.storage, item.id)
+        const alphaIcon =
+          isAlpha ? item.icon || palIcons.value.get((item.name ?? '').toLocaleLowerCase()) : undefined
+        const iconUrl = item.icon || alphaIcon || layer.iconUrl
         out.push({
           id: `wt:${layer.id}:${item.id}`,
           layerId: layer.id,
@@ -258,7 +265,7 @@ export const useMapStore = defineStore('map', () => {
           label,
           color: layer.color,
           done,
-          ...(item.icon ? { iconUrl: item.icon } : {}),
+          ...(iconUrl ? { iconUrl } : {}),
         })
       }
     }
