@@ -91,14 +91,14 @@ const GROUP_COLORS: Record<string, string> = {
 }
 
 const TYPE_COLORS: Record<string, string> = {
-  FieldBoss:  '#ef4444',
-  BossTower:  '#ec4899',
-  Bounty:     '#f97316',
-  Predator:   '#dc2626',
-  FastTravels:'#22d3ee',
-  WatchTower: '#67e8f9',
-  Dungeon:    '#94a3b8',
-  LootTower:  '#c084fc',
+  FieldBoss:   '#ef4444',
+  BossTower:   '#ec4899',
+  Bounty:      '#f97316',
+  Predator:    '#dc2626',
+  FastTravels: '#22d3ee',
+  WatchTower:  '#67e8f9',
+  Dungeon:     '#94a3b8',
+  LootTower:   '#c084fc',
 }
 
 export function getMarkerColor(marker: Marker): string {
@@ -108,9 +108,25 @@ export function getMarkerColor(marker: Marker): string {
 // ── Background color (fill inside the circle) ─────────────────────────────
 
 export function getMarkerBgColor(marker: Marker): string {
-  // Enemies get darker bg for contrast
   if (marker.group === 'enemies') return 'rgba(8, 14, 28, 0.88)'
   return 'rgba(15, 20, 40, 0.75)'
+}
+
+// ── HTML cache (Fix 6) ────────────────────────────────────────────────────
+//
+// Markers of the same type + subtype + pixelSize + checked state always
+// produce identical HTML. Caching avoids ~16 000 string allocations on
+// every refreshMarkerIcons call and lets buildLeafletMarker reuse results
+// on filter changes where the same marker reappears.
+//
+// Key: "{type}:{subtype}:{pixelSize}:{checked 0|1}:{level}"
+// The level is included because FieldBoss/BossTower embed it in the badge.
+
+const _htmlCache = new Map<string, string>()
+
+/** Clear the HTML cache — call when pixelSize baseline changes (zone switch). */
+export function clearMarkerHtmlCache(): void {
+  _htmlCache.clear()
 }
 
 // ── HTML for L.divIcon ─────────────────────────────────────────────────────
@@ -120,10 +136,16 @@ export function getMarkerHtml(
   pixelSize: number,
   checked: boolean,
 ): string {
+  const level   = typeof marker.extra?.level === 'number' ? marker.extra.level : null
+  // Cache key encodes every dimension that affects the output HTML.
+  const cacheKey = `${marker.type}:${marker.subtype ?? ''}:${pixelSize}:${checked ? 1 : 0}:${level ?? ''}`
+
+  const cached = _htmlCache.get(cacheKey)
+  if (cached !== undefined) return cached
+
   const iconUrl = getMarkerIconUrl(marker)
   const color   = getMarkerColor(marker)
   const bgColor = getMarkerBgColor(marker)
-  const level   = typeof marker.extra?.level === 'number' ? marker.extra.level : null
   const isLarge = ['FieldBoss', 'BossTower', 'FastTravels', 'WatchTower'].includes(marker.type)
 
   const imageStyle = [
@@ -131,7 +153,6 @@ export function getMarkerHtml(
     `height:${pixelSize}px`,
     `border-color:${color}`,
     `background-color:${bgColor}`,
-    // Inline all display properties to avoid CSS loading order issues
     `display:block`,
     `border-radius:50%`,
     `border:2px solid ${color}`,
@@ -144,12 +165,12 @@ export function getMarkerHtml(
 
   const checkedClass = checked ? ' palworld-map-marker-checked' : ''
   const lgClass      = isLarge ? ' palworld-map-marker-lg' : ''
-
-  const badge = (marker.type === 'FieldBoss' || marker.type === 'BossTower') && level != null
+  const badge        = level != null && (marker.type === 'FieldBoss' || marker.type === 'BossTower')
     ? `<span class="palworld-map-marker-badge">${level}</span>`
     : ''
 
-  return `<div class="palworld-map-marker-wrapper${checkedClass}${lgClass}" style="position:relative;display:inline-block;line-height:0">
-  <span aria-hidden="true" class="palworld-map-marker-image palworld-map-image-silhouette" style="${imageStyle}"></span>${badge}
-</div>`
+  const html = `<div class="palworld-map-marker-wrapper${checkedClass}${lgClass}" style="position:relative;display:inline-block;line-height:0"><span aria-hidden="true" class="palworld-map-marker-image palworld-map-image-silhouette" style="${imageStyle}"></span>${badge}</div>`
+
+  _htmlCache.set(cacheKey, html)
+  return html
 }

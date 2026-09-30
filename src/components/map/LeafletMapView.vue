@@ -5,11 +5,17 @@
  * Gerencia: tiles, marcadores, popup, smooth scroll, coordenadas.
  * Config exata extraída do JS do op.gg:
  *   CRS.Simple, WORLD_SIZE=256, tileSize=256, zoom 1-8, maxNativeZoom=4
+ *
+ * Performance fixes applied:
+ *  - Fix 1: O(1) id→marker index; watched-checked skips unchanged icons
+ *  - Fix 2: initial marker load in idle chunks (no main-thread freeze)
+ *  - Fix 5: debounced markerSize watch (slider drags are cheap)
+ *  - Fix 6: HTML cache in getMarkerHtml; clearMarkerHtmlCache on zone swap
  */
 
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useOpggMapStore } from '@/stores/opggMap'
 import {
@@ -17,7 +23,7 @@ import {
   WORLD_SIZE, MAP_BOUNDS,
   toGamePoint, toLatLng, getMapWindow,
 } from '@/domain/opggCoordinates'
-import { getMarkerHtml, getMarkerColor } from '@/domain/opggMarkerIcons'
+import { getMarkerHtml, clearMarkerHtmlCache } from '@/domain/opggMarkerIcons'
 import { markerDisplayName, markerTypeLabel } from '@/types/opggMarker'
 import type { Marker } from '@/types/opggMarker'
 import type { MapZone } from '@/stores/opggMap'
@@ -32,7 +38,7 @@ const emit = defineEmits<{
   mapReady: []
 }>()
 
-const mapStore    = useOpggMapStore()
+const mapStore     = useOpggMapStore()
 const mapContainer = ref<HTMLDivElement | null>(null)
 const zoomPercent  = ref('100%')
 const popupVisible = ref(false)
@@ -43,10 +49,13 @@ const gotoValue    = ref('')
 
 let mapInstance: L.Map | null = null
 let tileLayer:   L.TileLayer | null = null
-// LayerGroup per type for efficient updates
-const layerGroups = new Map<string, L.LayerGroup>()
-// Marker → L.Marker lookup by id
+
+// LayerGroup per marker type for efficient show/hide
+const layerGroups    = new Map<string, L.LayerGroup>()
+// id → L.Marker  (primary DOM lookup)
 const leafletMarkers = new Map<string, L.Marker>()
+// Fix 1 — id → Marker object for O(1) access in refreshMarkerIcons/checked watch
+const filteredMarkersById = new Map<string, Marker>()
 
 // ── Zoom percent ──────────────────────────────────────────────────────────
 function updateZoomPercent(zoom: number) {
@@ -81,8 +90,8 @@ function smoothZoomStep(timestamp: number, prevTs: number) {
 
   if (nextZoom !== currentZoom) {
     const scale = m.getZoomScale(nextZoom, currentZoom)
-    const half = m.getSize().divideBy(2)
-    const d = smoothZoomCenter.subtract(half).multiplyBy(1 - 1 / scale)
+    const half  = m.getSize().divideBy(2)
+    const d     = smoothZoomCenter.subtract(half).multiplyBy(1 - 1 / scale)
     const center = m.containerPointToLatLng(half.add(d))
     m._move(center, nextZoom, { pinch: true, round: false })
   }
@@ -114,54 +123,57 @@ function handleWheel(e: WheelEvent) {
   }, 400)
 }
 
-// ── Marker rendering ──────────────────────────────────────────────────────
+// ── Marker rendering helpers ──────────────────────────────────────────────
 function pixelSize(type: string): number {
   return mapStore.markerPixelSize(type)
 }
 
-function buildLeafletMarker(marker: Marker): L.Marker {
-  const size    = pixelSize(marker.type)
-  const checked = mapStore.isChecked(marker)
-  const html    = getMarkerHtml(marker, size, checked)
-
-  const icon = L.divIcon({
-    html,
-    className: 'palworld-map-marker',
+function makeIcon(marker: Marker, checked: boolean): L.DivIcon {
+  const size = pixelSize(marker.type)
+  return L.divIcon({
+    html:       getMarkerHtml(marker, size, checked),
+    className:  'palworld-map-marker',
     iconSize:   [size, size],
     iconAnchor: [size / 2, size / 2],
   })
+}
 
-  const displayName = markerDisplayName(marker)
-  const typeLabel   = markerTypeLabel(marker.type, marker.subtype ?? null)
-  const tooltipText = `${displayName} · ${formatIngameCoords(marker.ingameX, marker.ingameY)}`
+function buildLeafletMarker(marker: Marker): L.Marker {
+  const checked   = mapStore.isChecked(marker)
+  const lMarker   = L.marker([marker.lat, marker.lng], { icon: makeIcon(marker, checked) })
+  const size      = pixelSize(marker.type)
+  const tipText   = `${markerDisplayName(marker)} · ${formatIngameCoords(marker.ingameX, marker.ingameY)}`
 
-  const lMarker = L.marker([marker.lat, marker.lng], { icon })
-  lMarker.bindTooltip(tooltipText, { permanent: false, direction: 'top', offset: [0, -size / 2 - 4] })
-
+  lMarker.bindTooltip(tipText, { permanent: false, direction: 'top', offset: [0, -size / 2 - 4] })
   lMarker.on('click', (e: L.LeafletMouseEvent) => {
     L.DomEvent.stopPropagation(e)
     mapStore.selectMarker(marker)
     popupVisible.value = true
-    // Position popup near click point
     if (mapContainer.value) {
       const rect = mapContainer.value.getBoundingClientRect()
-      const pt = mapInstance!.latLngToContainerPoint([marker.lat, marker.lng])
+      const pt   = mapInstance!.latLngToContainerPoint([marker.lat, marker.lng])
       popupX.value = Math.min(pt.x + 10, rect.width - 300)
       popupY.value = Math.max(pt.y - 120, 10)
     }
   })
-
   return lMarker
 }
 
+// ── Fix 1 — rebuild filteredMarkersById index ─────────────────────────────
+function rebuildIndex(markers: Marker[]) {
+  filteredMarkersById.clear()
+  for (const m of markers) filteredMarkersById.set(m.id, m)
+}
+
+// ── syncMarkers — diff-based update (no full rebuild) ────────────────────
 function syncMarkers() {
   const m = mapInstance
   if (!m) return
 
-  const current = mapStore.filteredMarkers
+  const current    = mapStore.filteredMarkers
   const currentIds = new Set(current.map(mk => mk.id))
 
-  // Remove markers no longer visible
+  // Remove markers that are no longer in the filtered set
   for (const [id, lm] of leafletMarkers) {
     if (!currentIds.has(id)) {
       const type = id.split(':')[0] ?? ''
@@ -170,35 +182,80 @@ function syncMarkers() {
     }
   }
 
-  // Add new markers
+  // Add only new markers (existing ones are left untouched)
   for (const marker of current) {
     if (leafletMarkers.has(marker.id)) continue
     const lm = buildLeafletMarker(marker)
     leafletMarkers.set(marker.id, lm)
-    // Get or create LayerGroup for this type
     let lg = layerGroups.get(marker.type)
-    if (!lg) {
-      lg = L.layerGroup().addTo(m)
-      layerGroups.set(marker.type, lg)
-    }
+    if (!lg) { lg = L.layerGroup().addTo(m); layerGroups.set(marker.type, lg) }
     lg.addLayer(lm)
   }
+
+  // Fix 1 — keep the O(1) index in sync after every diff
+  rebuildIndex(current)
 }
 
-function refreshMarkerIcons() {
-  // Rebuild icons for all visible markers (called on size or checked change)
+// ── Fix 2 — chunked initial load to avoid blocking the main thread ────────
+const CHUNK_SIZE = 300
+
+function syncMarkersChunked() {
+  const m = mapInstance
+  if (!m) return
+
+  const current    = mapStore.filteredMarkers
+  const currentIds = new Set(current.map(mk => mk.id))
+
+  // Removals are fast — do them synchronously
   for (const [id, lm] of leafletMarkers) {
-    const marker = mapStore.filteredMarkers.find(mk => mk.id === id)
+    if (!currentIds.has(id)) {
+      const type = id.split(':')[0] ?? ''
+      layerGroups.get(type)?.removeLayer(lm)
+      leafletMarkers.delete(id)
+    }
+  }
+
+  const toAdd = current.filter(mk => !leafletMarkers.has(mk.id))
+  if (toAdd.length === 0) {
+    rebuildIndex(current)
+    return
+  }
+
+  let i = 0
+
+  function addChunk() {
+    const end = Math.min(i + CHUNK_SIZE, toAdd.length)
+    for (; i < end; i++) {
+      const marker = toAdd[i]!
+      const lm = buildLeafletMarker(marker)
+      leafletMarkers.set(marker.id, lm)
+      let lg = layerGroups.get(marker.type)
+      if (!lg) { lg = L.layerGroup().addTo(m!); layerGroups.set(marker.type, lg) }
+      lg.addLayer(lm)
+    }
+
+    if (i < toAdd.length) {
+      // Yield to the browser between chunks
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(addChunk, { timeout: 500 })
+      } else {
+        setTimeout(addChunk, 0)
+      }
+    } else {
+      // All chunks done — rebuild the full index
+      rebuildIndex(current)
+    }
+  }
+
+  addChunk()
+}
+
+// ── Fix 1 — refreshMarkerIcons uses O(1) index ───────────────────────────
+function refreshMarkerIcons() {
+  for (const [id, lm] of leafletMarkers) {
+    const marker = filteredMarkersById.get(id)   // O(1) — was O(n) find()
     if (!marker) continue
-    const size    = pixelSize(marker.type)
-    const checked = mapStore.isChecked(marker)
-    const html    = getMarkerHtml(marker, size, checked)
-    lm.setIcon(L.divIcon({
-      html,
-      className: 'palworld-map-marker',
-      iconSize:   [size, size],
-      iconAnchor: [size / 2, size / 2],
-    }))
+    lm.setIcon(makeIcon(marker, mapStore.isChecked(marker)))
   }
 }
 
@@ -207,38 +264,37 @@ function initMap() {
   const el = mapContainer.value
   if (!el) return
 
-  const saved = mapStore.cameraState
-  const defaultCenter: [number, number] = [-(WORLD_SIZE / 2), WORLD_SIZE / 2]
-  const center: [number, number] = saved?.zone === props.mapZone
-    ? [saved.lat, saved.lng] : defaultCenter
-  const zoom = saved?.zone === props.mapZone ? saved.zoom : 3
+  const saved  = mapStore.cameraState
+  const defCenter: [number, number] = [-(WORLD_SIZE / 2), WORLD_SIZE / 2]
+  const center: [number, number] = saved?.zone === props.mapZone ? [saved.lat, saved.lng] : defCenter
+  const zoom   = saved?.zone === props.mapZone ? saved.zoom : 3
 
   mapInstance = L.map(el, {
-    crs:              L.CRS.Simple,
+    crs:               L.CRS.Simple,
     center,
     zoom,
-    minZoom:          1,
-    maxZoom:          8,
-    zoomSnap:         0,
-    zoomDelta:        1,
-    zoomAnimation:    true,
-    fadeAnimation:    true,
-    inertia:          true,
-    scrollWheelZoom:  false,
-    zoomControl:      false,
+    minZoom:           1,
+    maxZoom:           8,
+    zoomSnap:          0,
+    zoomDelta:         1,
+    zoomAnimation:     true,
+    fadeAnimation:     true,
+    inertia:           true,
+    scrollWheelZoom:   false,
+    zoomControl:       false,
     attributionControl: false,
-    maxBounds:        MAP_BOUNDS,
+    maxBounds:         MAP_BOUNDS,
     maxBoundsViscosity: 0.8,
   })
 
   tileLayer = L.tileLayer(tileUrl(props.mapZone), {
-    tileSize:        256,
-    maxNativeZoom:   4,
-    minZoom:         0,
-    maxZoom:         8,
-    noWrap:          true,
+    tileSize:          256,
+    maxNativeZoom:     4,
+    minZoom:           0,
+    maxZoom:           8,
+    noWrap:            true,
     updateWhenZooming: false,
-    keepBuffer:      2,
+    keepBuffer:        2,
     bounds: [[-(WORLD_SIZE), 0], [0, WORLD_SIZE]],
   }).addTo(mapInstance)
 
@@ -264,33 +320,58 @@ function initMap() {
   })
 
   updateZoomPercent(zoom)
-  nextTick(syncMarkers)
+  // Fix 2 — use chunked loader on initial mount to avoid blocking the UI
+  nextTick(syncMarkersChunked)
   emit('mapReady')
 }
 
-// ── Watch filteredMarkers for changes ────────────────────────────────────
+// ── Watch: filter changes — diff sync (fast for small deltas) ────────────
 watch(() => mapStore.filteredMarkers, () => { syncMarkers() }, { deep: false })
 
-// ── Watch markerSize for icon rebuild ─────────────────────────────────────
-watch(() => mapStore.markerSize, () => { refreshMarkerIcons() })
+// ── Fix 5 — debounce markerSize watch so slider drags don't thrash ────────
+let sizeDebounceTimer: ReturnType<typeof setTimeout> | undefined
+watch(() => mapStore.markerSize, () => {
+  clearTimeout(sizeDebounceTimer)
+  sizeDebounceTimer = setTimeout(refreshMarkerIcons, 80)
+})
 
-// ── Watch checked state ───────────────────────────────────────────────────
-watch(() => mapStore.totalChecked, () => { refreshMarkerIcons() })
+// ── Fix 1 — checked watch: only update markers whose state actually changed
+watch(() => mapStore.totalChecked, () => {
+  for (const [id, lm] of leafletMarkers) {
+    const marker = filteredMarkersById.get(id)  // O(1)
+    if (!marker) continue
+
+    const isNowChecked = mapStore.isChecked(marker)
+    // DOM check — avoids setIcon when nothing changed
+    const el = lm.getElement()
+    const wasChecked = el
+      ? el.querySelector('.palworld-map-marker-checked') !== null
+      : false
+    if (isNowChecked === wasChecked) continue
+
+    lm.setIcon(makeIcon(marker, isNowChecked))
+  }
+})
 
 // ── Swap tile layer on zone change ────────────────────────────────────────
 watch(() => props.mapZone, async (newZone) => {
   if (!mapInstance) return
   if (tileLayer) { mapInstance.removeLayer(tileLayer); tileLayer = null }
+
   tileLayer = L.tileLayer(tileUrl(newZone), {
     tileSize: 256, maxNativeZoom: 4, minZoom: 0, maxZoom: 8,
     noWrap: true, updateWhenZooming: false, keepBuffer: 2,
     bounds: [[-(WORLD_SIZE), 0], [0, WORLD_SIZE]],
   }).addTo(mapInstance)
 
-  // Clear all markers
+  // Clear all markers and the O(1) index
   for (const lg of layerGroups.values()) lg.clearLayers()
   layerGroups.clear()
   leafletMarkers.clear()
+  filteredMarkersById.clear()
+  // Fix 6 — HTML cache is size-dependent; clear it on zone swap
+  clearMarkerHtmlCache()
+
   popupVisible.value = false
   mapStore.selectMarker(null)
 
@@ -301,8 +382,10 @@ watch(() => props.mapZone, async (newZone) => {
     mapInstance.setView([-(WORLD_SIZE / 2), WORLD_SIZE / 2], 2, { animate: false })
   }
   updateZoomPercent(mapInstance.getZoom())
+
   await nextTick()
-  syncMarkers()
+  // Fix 2 — chunked load also on zone switch (new zone may have many markers)
+  syncMarkersChunked()
 })
 
 // ── Exposed API ───────────────────────────────────────────────────────────
@@ -322,7 +405,6 @@ function centerIngame(ingameX: number, ingameY: number) {
 
 function getMap(): L.Map | null { return mapInstance }
 
-// Go-to coordinates
 function handleGoTo() {
   const text = gotoValue.value.trim()
   if (!text) return
@@ -332,7 +414,6 @@ function handleGoTo() {
   gotoValue.value = ''
 }
 
-// Fullscreen
 function toggleFullscreen() {
   const el = mapContainer.value?.parentElement ?? document.documentElement
   if (!document.fullscreenElement) {
@@ -349,10 +430,12 @@ onMounted(initMap)
 
 onBeforeUnmount(() => {
   cancelSmoothZoom()
+  clearTimeout(sizeDebounceTimer)
   mapContainer.value?.removeEventListener('wheel', handleWheel)
   for (const lg of layerGroups.values()) lg.clearLayers()
   layerGroups.clear()
   leafletMarkers.clear()
+  filteredMarkersById.clear()
   if (mapInstance) { mapInstance.remove(); mapInstance = null }
 })
 </script>
@@ -411,7 +494,10 @@ onBeforeUnmount(() => {
       <div
         v-if="popupVisible && mapStore.selectedMarker"
         class="map-popup-outer"
-        :style="{ left: `${popupX + (mapContainer?.getBoundingClientRect().left ?? 0)}px`, top: `${popupY + (mapContainer?.getBoundingClientRect().top ?? 0)}px` }"
+        :style="{
+          left: `${popupX + (mapContainer?.getBoundingClientRect().left ?? 0)}px`,
+          top:  `${popupY + (mapContainer?.getBoundingClientRect().top  ?? 0)}px`,
+        }"
       >
         <MarkerPopup
           :marker="mapStore.selectedMarker"

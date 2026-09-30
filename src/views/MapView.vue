@@ -439,38 +439,50 @@ async function toggleMouseLoop() {
             </div>
 
             <!-- Mark in game -->
-            <template v-if="mapStore.selectedMarker">
-              <div class="tools-row">
-                <button
-                  class="primary-btn"
-                  type="button"
-                  :disabled="markInGameRunning || server.gameMarkerBusy"
-                  @click="markInGame"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                       fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
-                  </svg>
-                  Mark in game
-                </button>
-                <button
-                  v-if="server.health?.active"
-                  class="icon-btn icon-btn--danger"
-                  type="button"
-                  title="Stop HUD"
-                  @click="server.clearHud"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                       fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <rect width="18" height="18" x="3" y="3" rx="2"/>
-                  </svg>
-                </button>
-              </div>
-              <div v-if="server.gameMarkerBusy" class="tools-status">
-                {{ server.gameMarker?.message }}
-                <button type="button" class="link-btn" @click="server.cancelGameMarker">Cancel</button>
-              </div>
-            </template>
+            <div class="tools-section-label">Mark in game</div>
+            <div class="tools-row">
+              <span class="coords-display">
+                <template v-if="mapStore.selectedMarker">
+                  {{ markerDisplayName(mapStore.selectedMarker) }}
+                </template>
+                <template v-else>
+                  <em style="color:#4444660">Click a marker first</em>
+                </template>
+              </span>
+              <button
+                class="icon-btn"
+                :class="{ 'icon-btn--danger': server.health?.active }"
+                type="button"
+                :disabled="!mapStore.selectedMarker"
+                :title="server.health?.active ? 'Stop HUD' : 'Toggle HUD in-game'"
+                @click="toggleHudForSelected"
+              >
+                <!-- map-pin icon -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
+                </svg>
+              </button>
+            </div>
+            <div class="tools-row">
+              <button
+                class="primary-btn"
+                style="width:100%"
+                type="button"
+                :disabled="!mapStore.selectedMarker || markInGameRunning || server.gameMarkerBusy"
+                @click="markInGame"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polygon points="6 3 20 12 6 21 6 3"/>
+                </svg>
+                Mark in game
+              </button>
+            </div>
+            <div v-if="server.gameMarkerBusy" class="tools-status">
+              {{ server.gameMarker?.message }}
+              <button type="button" class="link-btn" @click="server.cancelGameMarker">Cancel</button>
+            </div>
           </div>
         </details>
       </div>
@@ -880,6 +892,23 @@ async function toggleMouseLoop() {
   align-items: center;
   justify-content: space-between;
   gap: 4px;
+}
+
+.tools-section-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #5555770;
+  padding-top: 4px;
+}
+
+.coords-display {
+  font-size: 10px;
+  color: #aaaacc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .link-btn {
