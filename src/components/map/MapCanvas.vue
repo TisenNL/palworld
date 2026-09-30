@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import { api } from '@/services/api'
-import { gameToImage, imageToGame, mapProjection } from '@/domain/coordinates'
+import { gameToImage, imageToGame, mapProjection, formatCoordinatesOpgg } from '@/domain/coordinates'
 import { wtGameToImage, wtImageToGame, wtProjection } from '@/domain/worldTreeCoordinates'
 import { LruCache } from '@/domain/lruCache'
 import type { MapMarker } from '@/types/data'
@@ -422,7 +422,7 @@ function emitCursorStatus(
   const game = activeImageToGame(imageX, imageY)
   const x = Math.round(game.x)
   const y = Math.round(game.y)
-  const coords = `Centered on (${x}, ${y})`
+  const coords = formatCoordinatesOpgg(x, y, marker?.item.z)
   emit('hover', marker ? `${coords} · ${marker.label}` : coords)
 }
 

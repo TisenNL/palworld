@@ -12,7 +12,7 @@ import SafeImage from '@/components/common/SafeImage.vue'
 import CompactPanel from '@/components/layout/CompactPanel.vue'
 import MapCanvas from '@/components/map/MapCanvas.vue'
 import { layerGroups, wtLayerGroups } from '@/domain/layers'
-import { parseCoordinates } from '@/domain/coordinates'
+import { parseCoordinates, formatCoordinatesOpgg } from '@/domain/coordinates'
 import { useChecklistStore } from '@/stores/checklist'
 import { useMapStore } from '@/stores/map'
 import { usePreferencesStore } from '@/stores/preferences'
@@ -128,7 +128,7 @@ function centerTyped(): void {
     return
   }
   canvas.value?.centerGame(point.x, point.y)
-  map.hoverText = `Centered on (${point.x}, ${point.y})`
+  map.hoverText = formatCoordinatesOpgg(point.x, point.y)
 }
 
 async function runOcr(): Promise<void> {
@@ -212,7 +212,7 @@ function goToNearest(): void {
   if (!nearest) return
   canvas.value?.centerGame(nearest.marker.item.x, nearest.marker.item.y)
   map.showMarker(nearest.marker)
-  map.hoverText = `${nearest.marker.label} · ${nearest.distanceMeters.toLocaleString('en-US')} m away`
+  map.hoverText = `${formatCoordinatesOpgg(nearest.marker.item.x, nearest.marker.item.y, nearest.marker.item.z)} · ${nearest.marker.label} · ${nearest.distanceMeters.toLocaleString('en-US')} m away`
 }
 
 const MARK_MAX_RETRIES = 3

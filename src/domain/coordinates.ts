@@ -51,3 +51,20 @@ export function imageToGame(x: number, y: number): Point {
     y: scaleX * mapProjection.transformXPixel - mapProjection.ingameXStart,
   }
 }
+
+/**
+ * Format coordinates in the op.gg style: "X -612 · Y -17 · Z -17m"
+ * If z is not available, it will be omitted.
+ */
+export function formatCoordinatesOpgg(x: number, y: number, z?: number | null): string {
+  const formattedX = Math.round(x).toString()
+  const formattedY = Math.round(y).toString()
+  const parts = [`X ${formattedX}`, `Y ${formattedY}`]
+  
+  if (z != null && !Number.isNaN(z)) {
+    const formattedZ = Math.round(z).toString()
+    parts.push(`Z ${formattedZ}m`)
+  }
+  
+  return parts.join(' · ')
+}
