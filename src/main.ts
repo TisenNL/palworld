@@ -7,6 +7,8 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import { router } from './router'
 import './styles/main.css'
+import './styles/leaflet-overrides.css'
+import './styles/map-markers.css'
 import 'primeicons/primeicons.css'
 
 const app = createApp(App)

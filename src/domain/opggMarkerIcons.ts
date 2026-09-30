@@ -1,0 +1,155 @@
+/**
+ * Mapeamento de tipo de marker → URL de ícone e cor do ring.
+ * Ícones baixados de https://s-stats-platform-cdn.op.gg para public/opgg-icons/
+ */
+
+import type { Marker } from '@/types/opggMarker'
+
+// ── Icon URLs ──────────────────────────────────────────────────────────────
+
+// Effigy subtype → icon file
+const EFFIGY_ICONS: Record<string, string> = {
+  Carbunclo:     '/opgg-icons/effigies/lifmunk.webp',
+  SheepBall:     '/opgg-icons/effigies/lamball.webp',
+  Penguin:       '/opgg-icons/effigies/pengullet.webp',
+  IceCrocodile:  '/opgg-icons/effigies/munchill.webp',
+  FlameBambi:    '/opgg-icons/effigies/rooby.webp',
+  LeafMomonga:   '/opgg-icons/effigies/herbil.webp',
+  Monkey:        '/opgg-icons/effigies/tanzee.webp',
+  NegativeKoala: '/opgg-icons/effigies/depresso.webp',
+  PinkCat:       '/opgg-icons/effigies/cattiva.webp',
+  LazyDragon:    '/opgg-icons/effigies/lunaris.webp',
+  Mutant:        '/opgg-icons/effigies/relaxaurus.webp',
+  GuardianDog:   '/opgg-icons/effigies/yakumo.webp',
+}
+
+const EGG_ICONS: Record<string, string> = {
+  grass:       '/opgg-icons/eggs/grass.webp',
+  desert:      '/opgg-icons/eggs/desert.webp',
+  volcano:     '/opgg-icons/eggs/fire.webp',
+  snow:        '/opgg-icons/eggs/ice.webp',
+  sakurajima:  '/opgg-icons/eggs/dragon.webp',
+  darkIsland:  '/opgg-icons/eggs/dark.webp',
+  skyIsland:   '/opgg-icons/eggs/water.webp',
+  worldTree:   '/opgg-icons/eggs/worldtree.webp',
+}
+
+const TYPE_ICONS: Record<string, string> = {
+  FieldBoss:        '/opgg-icons/markers/field-boss.webp',
+  BossTower:        '/opgg-icons/markers/boss-tower.webp',
+  Bounty:           '/opgg-icons/markers/bounty.webp',
+  Predator:         '/opgg-icons/markers/predator.webp',
+  EnemyCamp:        '/opgg-icons/markers/enemy-camp.webp',
+  AntiAir:          '/opgg-icons/markers/anti-air.webp',
+  Incident:         '/opgg-icons/markers/incident.webp',
+  FastTravels:      '/opgg-icons/markers/fast-travel.webp',
+  WatchTower:       '/opgg-icons/markers/watch-tower.webp',
+  LootTower:        '/opgg-icons/markers/loot-tower.webp',
+  Note:             '/opgg-icons/markers/note.webp',
+  SkillFruits:      '/opgg-icons/markers/skill-fruit.webp',
+  FishingSpot:      '/opgg-icons/markers/fishing.webp',
+  RareFishingSpot:  '/opgg-icons/markers/fishing.webp',
+  Salvage:          '/opgg-icons/markers/salvage.webp',
+  Chestbox:         '/opgg-icons/markers/chest.webp',
+  Junk:             '/opgg-icons/markers/junk.webp',
+  WorldTreeOre:     '/opgg-icons/markers/world-tree-ore.webp',
+  Quest:            '/opgg-icons/markers/quest.webp',
+  NpcSalesPerson:   '/opgg-icons/resources/human.webp',
+  NpcPalDealer:     '/opgg-icons/resources/human.webp',
+  NpcDarkTrader:    '/opgg-icons/resources/human.webp',
+  NpcMedalTrader:   '/opgg-icons/resources/human.webp',
+  NpcBountyTrader:  '/opgg-icons/resources/human.webp',
+  NpcOther:         '/opgg-icons/resources/human.webp',
+  NpcEmote:         '/opgg-icons/resources/human.webp',
+  NpcPalDisplay:    '/opgg-icons/resources/human.webp',
+  NpcPresenter:     '/opgg-icons/resources/human.webp',
+  HardWood:         '/opgg-icons/resources/hardwood.webp',
+}
+
+export function getMarkerIconUrl(marker: Marker): string {
+  if (marker.type === 'LifmunkEffigy' && marker.subtype) {
+    return EFFIGY_ICONS[marker.subtype] ?? '/opgg-icons/effigies/lifmunk.webp'
+  }
+  if (marker.type === 'Eggs' && marker.subtype) {
+    return EGG_ICONS[marker.subtype] ?? '/opgg-icons/eggs/grass.webp'
+  }
+  return TYPE_ICONS[marker.type] ?? ''
+}
+
+// ── Ring / border colors by group ─────────────────────────────────────────
+
+const GROUP_COLORS: Record<string, string> = {
+  collectibles: '#a78bfa',  // violet
+  eggs:         '#86efac',  // green
+  enemies:      '#f87171',  // red
+  fishing:      '#38bdf8',  // sky
+  locations:    '#34d399',  // emerald
+  mine:         '#fb923c',  // orange
+  npc:          '#facc15',  // yellow
+  oilrig:       '#f59e0b',  // amber
+  resources:    '#a3e635',  // lime
+}
+
+const TYPE_COLORS: Record<string, string> = {
+  FieldBoss:  '#ef4444',
+  BossTower:  '#ec4899',
+  Bounty:     '#f97316',
+  Predator:   '#dc2626',
+  FastTravels:'#22d3ee',
+  WatchTower: '#67e8f9',
+  Dungeon:    '#94a3b8',
+  LootTower:  '#c084fc',
+}
+
+export function getMarkerColor(marker: Marker): string {
+  return TYPE_COLORS[marker.type] ?? GROUP_COLORS[marker.group] ?? '#6c5ce7'
+}
+
+// ── Background color (fill inside the circle) ─────────────────────────────
+
+export function getMarkerBgColor(marker: Marker): string {
+  // Enemies get darker bg for contrast
+  if (marker.group === 'enemies') return 'rgba(8, 14, 28, 0.88)'
+  return 'rgba(15, 20, 40, 0.75)'
+}
+
+// ── HTML for L.divIcon ─────────────────────────────────────────────────────
+
+export function getMarkerHtml(
+  marker: Marker,
+  pixelSize: number,
+  checked: boolean,
+): string {
+  const iconUrl = getMarkerIconUrl(marker)
+  const color   = getMarkerColor(marker)
+  const bgColor = getMarkerBgColor(marker)
+  const level   = typeof marker.extra?.level === 'number' ? marker.extra.level : null
+  const isLarge = ['FieldBoss', 'BossTower', 'FastTravels', 'WatchTower'].includes(marker.type)
+
+  const imageStyle = [
+    `width:${pixelSize}px`,
+    `height:${pixelSize}px`,
+    `border-color:${color}`,
+    `background-color:${bgColor}`,
+    // Inline all display properties to avoid CSS loading order issues
+    `display:block`,
+    `border-radius:50%`,
+    `border:2px solid ${color}`,
+    `background-size:75%`,
+    `background-repeat:no-repeat`,
+    `background-position:center`,
+    `box-shadow:0 2px 6px rgba(0,0,0,.6)`,
+    iconUrl ? `background-image:url('${iconUrl.replace(/'/g, '%27')}')` : '',
+  ].filter(Boolean).join(';')
+
+  const checkedClass = checked ? ' palworld-map-marker-checked' : ''
+  const lgClass      = isLarge ? ' palworld-map-marker-lg' : ''
+
+  const badge = (marker.type === 'FieldBoss' || marker.type === 'BossTower') && level != null
+    ? `<span class="palworld-map-marker-badge">${level}</span>`
+    : ''
+
+  return `<div class="palworld-map-marker-wrapper${checkedClass}${lgClass}" style="position:relative;display:inline-block;line-height:0">
+  <span aria-hidden="true" class="palworld-map-marker-image palworld-map-image-silhouette" style="${imageStyle}"></span>${badge}
+</div>`
+}

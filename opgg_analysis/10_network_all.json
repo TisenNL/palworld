@@ -1,0 +1,997 @@
+[
+  {
+    "url": "https://op.gg/palworld/map",
+    "type": "document",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/media/797e433ab948586e-s.p.0r6juujl39pe6.woff2",
+    "type": "font",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/media/caa3a2e1cccd8315-s.p.0wgildi0cnwt9.woff2",
+    "type": "font",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/0z5n2ds_3csdc.css",
+    "type": "stylesheet",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/0a1vcstx9cygt.css",
+    "type": "stylesheet",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/0kb9ncu1j0-zv.css",
+    "type": "stylesheet",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/2u3pylmgxoma9.css",
+    "type": "stylesheet",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/1f7fa8f36b97bccd81a09d891ab48e53.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/578ee563211e6ec9586f3d9dee5c55da.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/12ce1f5fb16ad1d378a38dd717e3f39f.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/a9ec9005c598e9dc644e46835a8170bf.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/058928c9b0da0c9833f279f65e9bffe9.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/a31ab0f891ab2609ac0a9825c03816e6.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/04a40f3b0d664bf4478e2f215f448f3c.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/f8f51b5a7ef32cf4cdd43545f3ce3574.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/06f2c5c6f57cb212a207eb1d8f1b2160.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/1f3d8921b286644f2f28a4d4853d8d87.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/0n8kzvw2z_6as.css",
+    "type": "stylesheet",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/240fqrwzkjiv1.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/3wn0__mqqyczo.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/3r-qo0wf550sv.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/2t2wdv5ksc71x.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/0waog1kmznyx6.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/18_bm77qjagwn.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/turbopack-0i8djoqyqrxg3.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/0-yd4gihf1ry-.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/3xt6jkaeuizu0.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/3two0wfp-s7et.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/3p_p7li273omq.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/1a_cxuw5akj8n.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/1w8cocdwkskus.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/34fq-4b1nhdzv.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/0jvunzfhiy7f-.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/2vpch59ui2dap.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/0qzgoxjwiofta.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/30crq-f9ezkkw.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/350u-wkaqbubb.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/0y74l5v59hklh.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/25oxhutz9lphh.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/0ed1c5m5wfuzm.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/013gweq2v6pn4.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/42vb6ex204uaw.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/1-e2onbw5juez.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/1ca6-wjt5dxwg.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/26qjol2e-5lgb.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/2eza63czijxhm.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/1q69fzx85xbqs.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/3v7l4o5_hev_t.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/1ktykfxkyh0pz.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/02vzr4rrfn1be.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/0ugxmspt-be0l.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/25wvyidfu4dyz.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://www.googletagmanager.com/gtm.js?id=GTM-5ZSNGV54",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://opgg.rybbit.com/api/script.js?siteId=60af20fdf197",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://opgg.rybbit.com/api/script.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/meta/web-contract/v1/map-points/index.json?v=2026091501",
+    "type": "other",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/08664e3f401569aca5e12eec15695421.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/968fbbfb3dbebd05e25545bb2d1d9437.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/2b9e5d04e4e7b4d07c0807beb8fc4241.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/6cd1996dccd4d60704436a35b7128027.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/7428828f5908dd4d5c1a7b45462984e8.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://static.zdassets.com/ekr/snippet.js?key=8b7154d5-b1a4-4326-85bf-e549cb4b2be5",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/sns/icon-sns-instagram.svg",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/sns/icon-sns-youtube.svg",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/sns/icon-sns-x.svg",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/sns/icon-sns-facebook.svg",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/sns/icon-sns-overwolf.svg",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/bfa5abe2f78d6e9a55e81c9988c31442.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/images/icon/72a256dbf8ea469d0d1453729369b7f1.svg?image=q_auto:good,f_webp,w_48,h_48",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/assets/images/palworld/logo.svg?image=q_auto:good,f_webp,w_160&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-opgg-kit.op.gg/gnb/config/en-us/palworld.ads.json",
+    "type": "fetch",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/app-router/_next/static/chunks/3t9rddgutrgpj.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://js.opgg.beer/",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://css.opgg.beer/",
+    "type": "stylesheet",
+    "method": "GET"
+  },
+  {
+    "url": "https://ekr.zdassets.com/compose/8b7154d5-b1a4-4326-85bf-e549cb4b2be5",
+    "type": "fetch",
+    "method": "GET"
+  },
+  {
+    "url": "https://www.googletagmanager.com/gtag/js?id=G-NXW08490BK&cx=c&gtm=4e69s1",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://www.googletagmanager.com/gtag/js?id=G-WCXGQGETWH&cx=c&gtm=4e69s1",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-1-1.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-2-1.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-1-2.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-2-2.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-1-0.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-2-0.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-0-1.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-3-1.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-0-2.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-3-2.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-1-3.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-2-3.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-0-0.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-3-0.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-0-3.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/2-3-3.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/Relic.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/Relic_01.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/Relic_02.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/Relic_03.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/Relic_04.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/Relic_05.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/Relic_06.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/Relic_07.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/Relic_09.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/Relic_10.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/Relic_11.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/loot-tower.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/note.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/PalEgg_Leaf_01.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/PalEgg_Earth_01.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/PalEgg_Fire_01.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/PalEgg_Ice_01.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/PalEgg_Normal_01.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/PalEgg_Dark_01.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/PalEgg_Electricity_01.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/boss-tower.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/field-boss.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/bounty.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/predator.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/enemy-camp.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/anti-air.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/incident.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/fishing.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/salvage.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://opgg.rybbit.com/api/site/tracking-config/60af20fdf197",
+    "type": "fetch",
+    "method": "GET"
+  },
+  {
+    "url": "https://opgg.rybbit.com/api/site/tracking-config/483088b7ea1b",
+    "type": "fetch",
+    "method": "GET"
+  },
+  {
+    "url": "https://js.opgg.beer/dist-f4azc-DW04HAkJ.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://js.opgg.beer/actions-CUIvER0A-f4azc-Cy_DWWOH.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://js.opgg.beer/page-BmjJhO39-f4azc-BOFpu7G5.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://cmp.inmobi.com/geoip",
+    "type": "fetch",
+    "method": "GET"
+  },
+  {
+    "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-NXW08490BK&gtm=45je69s1v9229704383z89229695251za20gzb9229695251zd9229695251xf1&_p=1790766310079&gcd=13l3l3l3l1l1&npa=0&dma=0&cid=1625426175.1790766310&frm=0&ngs=1&pscdl=noapi&rcb=13&sr=1600x900&uaa=x86&uab=64&uafvl=Chromium%3B153.0.8010.12%7CNot_A%2520Brand%3B8.0.0.0&uam=&uamb=0&uap=Windows&uapv=10.0&uaw=0&ul=pt-br&_s=1&tag_exp=115938466~115938469~118897920~118897930~120213116~120385422~120469145~120469153&sid=1790766310&sct=1&seg=0&dl=https%3A%2F%2Fop.gg%2Fpalworld%2Fmap&dt=Palworld%20Interactive%20Map%20-%20Chests%2C%20Eggs%2C%20Effigies%20%26%20Bosses%20%7C%20OP.GG&en=page_view&_fv=1&_nsi=1&_ss=1&tfd=2048",
+    "type": "fetch",
+    "method": "POST"
+  },
+  {
+    "url": "https://js.opgg.beer/easter-egg-Bf2pVclo-f4azc-PU4Lgq2D.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://analytics.google.com/g/collect?v=2&tid=G-WCXGQGETWH&gtm=45je69s1v9223426332z89229695251za20gzb9229695251zd9229695251xf1&_p=1790766310079&_gaz=1&gcd=13l3l3l3l1l1&npa=0&dma=0&ecid=363236642&_eu=AAAAAGAC&cid=1625426175.1790766310&ec_mode=a&frm=0&pscdl=noapi&rcb=4&sr=1600x900&uaa=x86&uab=64&uafvl=Chromium%3B153.0.8010.12%7CNot_A%2520Brand%3B8.0.0.0&uam=&uamb=0&uap=Windows&uapv=10.0&uaw=0&ul=pt-br&gaf=2&_s=1&tag_exp=115938466~115938469~118897920~118897930~120213116~120385422~120469145~120469153~121125486~121377079&sid=1790766310&sct=1&seg=0&dl=https%3A%2F%2Fop.gg%2Fpalworld%2Fmap&dt=Palworld%20Interactive%20Map%20-%20Chests%2C%20Eggs%2C%20Effigies%20%26%20Bosses%20%7C%20OP.GG&en=page_view&_fv=1&_ss=1&tfd=2119",
+    "type": "fetch",
+    "method": "POST"
+  },
+  {
+    "url": "https://stats.g.doubleclick.net/g/collect?v=2&tid=G-WCXGQGETWH&cid=1625426175.1790766310&gtm=45je69s1v9223426332z89229695251za20gzb9229695251zd9229695251xf1&rcb=4&aip=1&dma=0&gcd=13l3l3l3l1l1&npa=0&frm=0&tag_exp=115938466~115938469~118897920~118897930~120213116~120385422~120469145~120469153~121125486~121377079",
+    "type": "ping",
+    "method": "POST"
+  },
+  {
+    "url": "https://www.google.com.br/ads/ga-audiences?v=1&t=sr&slf_rd=1&_r=4&tid=G-WCXGQGETWH&cid=1625426175.1790766310&gtm=45je69s1v9223426332z89229695251za20gzb9229695251zd9229695251xf1&rcb=4&aip=1&dma=0&gcd=13l3l3l3l1l1&npa=0&frm=0&tag_exp=115938466~115938469~118897920~118897930~120213116~120385422~120469145~120469153~121125486~121377079&z=450801256",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://static.zdassets.com/web_widget/messenger/latest/web-widget-main-479f670.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://opgg.rybbit.com/api/track",
+    "type": "fetch",
+    "method": "POST"
+  },
+  {
+    "url": "https://opgg.rybbit.com/api/track",
+    "type": "fetch",
+    "method": "POST"
+  },
+  {
+    "url": "https://static.zdassets.com/web_widget/messenger/latest/web-widget-5433-479f670.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://static.zdassets.com/web_widget/messenger/latest/web-widget-locales/messenger/pt-br-json-479f670.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://static.zdassets.com/web_widget/messenger/latest/web-widget-403-479f670.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://static.zdassets.com/web_widget/messenger/latest/web-widget-1261-479f670.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://static.zdassets.com/web_widget/messenger/latest/web-widget-9076-479f670.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://static.zdassets.com/web_widget/messenger/latest/web-widget-7901-479f670.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://static.zdassets.com/web_widget/messenger/latest/web-widget-1313-479f670.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://static.zdassets.com/web_widget/messenger/latest/web-widget-931-479f670.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://static.zdassets.com/web_widget/messenger/latest/web-widget-1606-479f670.js",
+    "type": "script",
+    "method": "GET"
+  },
+  {
+    "url": "https://opggsupport.zendesk.com/frontendevents/pv?client=1B752747-577B-429A-A0E0-83861AF69088",
+    "type": "fetch",
+    "method": "POST"
+  },
+  {
+    "url": "https://opggsupport.zendesk.com/embeddable/config",
+    "type": "fetch",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-2-2.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-3-2.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-2-3.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-3-3.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-2-1.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-3-1.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-1-2.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-4-2.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-1-3.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-4-3.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-2-4.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-3-4.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-1-1.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-4-1.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-1-4.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/3-4-4.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-5-5.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-6-5.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-5-6.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-6-6.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-5-4.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-6-4.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-4-5.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-7-5.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-4-6.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-7-6.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-5-7.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-6-7.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-4-4.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-7-4.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-4-7.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/4-7-7.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles-tree/4x5x5.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles-tree/4x5x4.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles-tree/4x4x5.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles-tree/4x6x5.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles-tree/4x5x6.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles-tree/4x4x4.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles-tree/4x6x4.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles-tree/4x4x6.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles-tree/4x6x6.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/Relic_08.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/PalEgg_WorldTree_01.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/fast-travel.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/watch-tower.png?v=2026091501&image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/quest.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/world-tree-ore.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/Wood_Fine.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/icons/Human.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/chest.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/junk.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  },
+  {
+    "url": "https://s-stats-platform-cdn.op.gg/palworld/images/markers/skill-fruit.png?image=q_auto:good,f_webp,w_48&v=1790736170",
+    "type": "image",
+    "method": "GET"
+  }
+]

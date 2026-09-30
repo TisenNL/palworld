@@ -1,0 +1,13 @@
+{
+  "count": 8,
+  "urls": [
+    "https://s-stats-platform-cdn.op.gg/palworld/meta/web-contract/v1/map-points/index.json?v=2026091501",
+    "https://s-opgg-kit.op.gg/gnb/config/en-us/palworld.ads.json",
+    "https://cmp.inmobi.com/geoip",
+    "https://ekr.zdassets.com/compose/8b7154d5-b1a4-4326-85bf-e549cb4b2be5",
+    "https://opgg.rybbit.com/api/site/tracking-config/60af20fdf197",
+    "https://opgg.rybbit.com/api/site/tracking-config/483088b7ea1b",
+    "https://opggsupport.zendesk.com/embeddable/config",
+    "https://opgg.rybbit.com/api/track"
+  ]
+}

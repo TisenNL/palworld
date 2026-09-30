@@ -1,0 +1,27 @@
+{
+  "libraries": {
+    "leaflet": true,
+    "maplibre": false,
+    "mapbox": false,
+    "openlayers": false,
+    "googleMaps": false,
+    "react": false,
+    "next": false
+  },
+  "windowKeys": [
+    "onformdata",
+    "onloadeddata",
+    "onloadedmetadata",
+    "createImageBitmap",
+    "dataLayer",
+    "google_tag_data"
+  ],
+  "leafletInfo": {
+    "version": "1.9.4",
+    "mapElements": []
+  },
+  "mapLibreInfo": null,
+  "reactInfo": null,
+  "nextInfo": null,
+  "mapConfig": null
+}

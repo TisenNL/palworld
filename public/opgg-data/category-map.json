@@ -1,0 +1,452 @@
+{
+  "effigy:Carbunclo": {
+    "group": "collectibles",
+    "file": "groups/collectibles.json",
+    "count_world": 140,
+    "count_tree": 15
+  },
+  "effigy:SheepBall": {
+    "group": "collectibles",
+    "file": "groups/collectibles.json",
+    "count_world": 30,
+    "count_tree": 0
+  },
+  "effigy:Penguin": {
+    "group": "collectibles",
+    "file": "groups/collectibles.json",
+    "count_world": 30,
+    "count_tree": 0
+  },
+  "effigy:IceCrocodile": {
+    "group": "collectibles",
+    "file": "groups/collectibles.json",
+    "count_world": 30,
+    "count_tree": 0
+  },
+  "effigy:FlameBambi": {
+    "group": "collectibles",
+    "file": "groups/collectibles.json",
+    "count_world": 30,
+    "count_tree": 0
+  },
+  "effigy:LeafMomonga": {
+    "group": "collectibles",
+    "file": "groups/collectibles.json",
+    "count_world": 30,
+    "count_tree": 0
+  },
+  "effigy:Monkey": {
+    "group": "collectibles",
+    "file": "groups/collectibles.json",
+    "count_world": 30,
+    "count_tree": 0
+  },
+  "effigy:NegativeKoala": {
+    "group": "collectibles",
+    "file": "groups/collectibles.json",
+    "count_world": 30,
+    "count_tree": 0
+  },
+  "effigy:PinkCat": {
+    "group": "collectibles",
+    "file": "groups/collectibles.json",
+    "count_world": 0,
+    "count_tree": 30
+  },
+  "effigy:Mutant": {
+    "group": "collectibles",
+    "file": "groups/collectibles.json",
+    "count_world": 4,
+    "count_tree": 0
+  },
+  "effigy:LazyDragon": {
+    "group": "collectibles",
+    "file": "groups/collectibles.json",
+    "count_world": 4,
+    "count_tree": 0
+  },
+  "effigy:GuardianDog": {
+    "group": "collectibles",
+    "file": "groups/collectibles.json",
+    "count_world": 2,
+    "count_tree": 2
+  },
+  "lootTower": {
+    "group": "collectibles",
+    "file": "groups/collectibles.json",
+    "count_world": 106,
+    "count_tree": 0
+  },
+  "note": {
+    "group": "collectibles",
+    "file": "groups/collectibles.json",
+    "count_world": 55,
+    "count_tree": 9
+  },
+  "egg:grass": {
+    "group": "eggs",
+    "file": "groups/eggs.json",
+    "count_world": 441,
+    "count_tree": 0
+  },
+  "egg:desert": {
+    "group": "eggs",
+    "file": "groups/eggs.json",
+    "count_world": 122,
+    "count_tree": 0
+  },
+  "egg:volcano": {
+    "group": "eggs",
+    "file": "groups/eggs.json",
+    "count_world": 310,
+    "count_tree": 0
+  },
+  "egg:snow": {
+    "group": "eggs",
+    "file": "groups/eggs.json",
+    "count_world": 271,
+    "count_tree": 0
+  },
+  "egg:sakurajima": {
+    "group": "eggs",
+    "file": "groups/eggs.json",
+    "count_world": 36,
+    "count_tree": 0
+  },
+  "egg:darkIsland": {
+    "group": "eggs",
+    "file": "groups/eggs.json",
+    "count_world": 567,
+    "count_tree": 0
+  },
+  "egg:skyIsland": {
+    "group": "eggs",
+    "file": "groups/eggs.json",
+    "count_world": 39,
+    "count_tree": 0
+  },
+  "egg:worldTree": {
+    "group": "eggs",
+    "file": "groups/eggs.json",
+    "count_world": 0,
+    "count_tree": 30
+  },
+  "bossTower": {
+    "group": "enemies",
+    "file": "groups/enemies.json",
+    "count_world": 9,
+    "count_tree": 4
+  },
+  "fieldBoss": {
+    "group": "enemies",
+    "file": "groups/enemies.json",
+    "count_world": 83,
+    "count_tree": 7
+  },
+  "bounty": {
+    "group": "enemies",
+    "file": "groups/enemies.json",
+    "count_world": 33,
+    "count_tree": 0
+  },
+  "predator": {
+    "group": "enemies",
+    "file": "groups/enemies.json",
+    "count_world": 29,
+    "count_tree": 0
+  },
+  "enemyCamp": {
+    "group": "enemies",
+    "file": "groups/enemies.json",
+    "count_world": 47,
+    "count_tree": 0
+  },
+  "antiAir": {
+    "group": "enemies",
+    "file": "groups/enemies.json",
+    "count_world": 11,
+    "count_tree": 0
+  },
+  "incident": {
+    "group": "enemies",
+    "file": "groups/enemies.json",
+    "count_world": 88,
+    "count_tree": 9
+  },
+  "fishingSpot": {
+    "group": "fishing",
+    "file": "groups/fishing.json",
+    "count_world": 560,
+    "count_tree": 77
+  },
+  "salvage": {
+    "group": "fishing",
+    "file": "groups/fishing.json",
+    "count_world": 2763,
+    "count_tree": 0
+  },
+  "fastTravel": {
+    "group": "locations",
+    "file": "groups/locations.json",
+    "count_world": 137,
+    "count_tree": 15
+  },
+  "respawn": {
+    "group": "locations",
+    "file": "groups/locations.json",
+    "count_world": 8,
+    "count_tree": 0
+  },
+  "skylandWarpAltar": {
+    "group": "locations",
+    "file": "groups/locations.json",
+    "count_world": 20,
+    "count_tree": 0
+  },
+  "home": {
+    "group": "locations",
+    "file": "groups/locations.json",
+    "count_world": 32,
+    "count_tree": 0
+  },
+  "watchTower": {
+    "group": "locations",
+    "file": "groups/locations.json",
+    "count_world": 20,
+    "count_tree": 2
+  },
+  "regionName": {
+    "group": "locations",
+    "file": "groups/locations.json",
+    "count_world": 121,
+    "count_tree": 0
+  },
+  "dungeon": {
+    "group": "locations",
+    "file": "groups/locations.json",
+    "count_world": 188,
+    "count_tree": 0
+  },
+  "caveEntrance": {
+    "group": "locations",
+    "file": "groups/locations.json",
+    "count_world": 17,
+    "count_tree": 0
+  },
+  "treasureMap": {
+    "group": "locations",
+    "file": "groups/locations.json",
+    "count_world": 42,
+    "count_tree": 0
+  },
+  "heatArea": {
+    "group": "locations",
+    "file": "groups/locations.json",
+    "count_world": 21,
+    "count_tree": 0
+  },
+  "quest": {
+    "group": "locations",
+    "file": "groups/locations.json",
+    "count_world": 155,
+    "count_tree": 14
+  },
+  "oreMetal": {
+    "group": "mine",
+    "file": "groups/mine.json",
+    "count_world": 1438,
+    "count_tree": 0
+  },
+  "oreCoal": {
+    "group": "mine",
+    "file": "groups/mine.json",
+    "count_world": 520,
+    "count_tree": 0
+  },
+  "oreQuartz": {
+    "group": "mine",
+    "file": "groups/mine.json",
+    "count_world": 523,
+    "count_tree": 0
+  },
+  "oreQuartzCluster": {
+    "group": "mine",
+    "file": "groups/mine.json",
+    "count_world": 11,
+    "count_tree": 0
+  },
+  "oreSulfur": {
+    "group": "mine",
+    "file": "groups/mine.json",
+    "count_world": 280,
+    "count_tree": 0
+  },
+  "chromite": {
+    "group": "mine",
+    "file": "groups/mine.json",
+    "count_world": 257,
+    "count_tree": 0
+  },
+  "rainbowCrystal": {
+    "group": "mine",
+    "file": "groups/mine.json",
+    "count_world": 349,
+    "count_tree": 0
+  },
+  "skyIslandOre": {
+    "group": "mine",
+    "file": "groups/mine.json",
+    "count_world": 208,
+    "count_tree": 0
+  },
+  "worldTreeOre": {
+    "group": "mine",
+    "file": "groups/mine.json",
+    "count_world": 0,
+    "count_tree": 80
+  },
+  "hardWood": {
+    "group": "mine",
+    "file": "groups/mine.json",
+    "count_world": 2370,
+    "count_tree": 1
+  },
+  "ancientLava": {
+    "group": "mine",
+    "file": "groups/mine.json",
+    "count_world": 10,
+    "count_tree": 0
+  },
+  "ancientWood": {
+    "group": "mine",
+    "file": "groups/mine.json",
+    "count_world": 10,
+    "count_tree": 0
+  },
+  "ancientBeastBone": {
+    "group": "mine",
+    "file": "groups/mine.json",
+    "count_world": 10,
+    "count_tree": 0
+  },
+  "npcSalesPerson": {
+    "group": "npc",
+    "file": "groups/npc.json",
+    "count_world": 8,
+    "count_tree": 0
+  },
+  "npcPalDealer": {
+    "group": "npc",
+    "file": "groups/npc.json",
+    "count_world": 10,
+    "count_tree": 0
+  },
+  "npcDarkTrader": {
+    "group": "npc",
+    "file": "groups/npc.json",
+    "count_world": 4,
+    "count_tree": 0
+  },
+  "npcMedalTrader": {
+    "group": "npc",
+    "file": "groups/npc.json",
+    "count_world": 4,
+    "count_tree": 0
+  },
+  "npcPalDisplay": {
+    "group": "npc",
+    "file": "groups/npc.json",
+    "count_world": 9,
+    "count_tree": 0
+  },
+  "npcEmote": {
+    "group": "npc",
+    "file": "groups/npc.json",
+    "count_world": 17,
+    "count_tree": 0
+  },
+  "npcPresenter": {
+    "group": "npc",
+    "file": "groups/npc.json",
+    "count_world": 1,
+    "count_tree": 0
+  },
+  "npcBountyTrader": {
+    "group": "npc",
+    "file": "groups/npc.json",
+    "count_world": 4,
+    "count_tree": 0
+  },
+  "npcOther": {
+    "group": "npc",
+    "file": "groups/npc.json",
+    "count_world": 106,
+    "count_tree": 1
+  },
+  "chestOilrig": {
+    "group": "oilrig",
+    "file": "groups/oilrig.json",
+    "count_world": 45,
+    "count_tree": 0
+  },
+  "chestOilrigGoal": {
+    "group": "oilrig",
+    "file": "groups/oilrig.json",
+    "count_world": 6,
+    "count_tree": 0
+  },
+  "chest": {
+    "group": "resources",
+    "file": "groups/resources.json",
+    "count_world": 1412,
+    "count_tree": 38
+  },
+  "elementChest": {
+    "group": "resources",
+    "file": "groups/resources.json",
+    "count_world": 109,
+    "count_tree": 0
+  },
+  "supply": {
+    "group": "resources",
+    "file": "groups/resources.json",
+    "count_world": 480,
+    "count_tree": 0
+  },
+  "junk": {
+    "group": "resources",
+    "file": "groups/resources.json",
+    "count_world": 646,
+    "count_tree": 24
+  },
+  "skillFruit": {
+    "group": "resources",
+    "file": "groups/resources.json",
+    "count_world": 31,
+    "count_tree": 12
+  },
+  "peach": {
+    "group": "resources",
+    "file": "groups/resources.json",
+    "count_world": 22,
+    "count_tree": 0
+  },
+  "beautifulFlower": {
+    "group": "resources",
+    "file": "groups/resources.json",
+    "count_world": 27,
+    "count_tree": 0
+  },
+  "crudeOil": {
+    "group": "resources",
+    "file": "groups/resources.json",
+    "count_world": 185,
+    "count_tree": 0
+  },
+  "nightStone": {
+    "group": "resources",
+    "file": "groups/resources.json",
+    "count_world": 271,
+    "count_tree": 0
+  }
+}

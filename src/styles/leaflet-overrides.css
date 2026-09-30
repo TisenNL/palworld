@@ -1,0 +1,71 @@
+/* ── Leaflet container reset ─────────────────────────────────────────────── */
+.leaflet-container {
+  background: #0c1822;
+  font-family: inherit;
+  cursor: crosshair;
+}
+
+.leaflet-container.leaflet-grab {
+  cursor: grab;
+}
+
+.leaflet-container.leaflet-dragging {
+  cursor: grabbing;
+}
+
+/* ── Hide default Leaflet controls (we use custom ones) ─────────────────── */
+.leaflet-control-zoom,
+.leaflet-control-attribution {
+  display: none !important;
+}
+
+/* ── Tile layer ─────────────────────────────────────────────────────────── */
+.leaflet-tile {
+  image-rendering: auto;
+}
+
+/* ── Marker pane (above tiles) ───────────────────────────────────────────── */
+.leaflet-marker-pane {
+  /* Markers are above tiles by default – fine */
+}
+
+/* ── Popup override ──────────────────────────────────────────────────────── */
+.leaflet-popup-content-wrapper {
+  background: #1a1a2e;
+  border: 1px solid #3c3c4d;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  color: #e0e0f0;
+  padding: 0;
+}
+
+.leaflet-popup-content {
+  margin: 0;
+}
+
+.leaflet-popup-tip-container {
+  display: none;
+}
+
+.leaflet-popup-close-button {
+  color: #8888aa !important;
+  top: 8px !important;
+  right: 8px !important;
+}
+
+/* ── Tooltip override ────────────────────────────────────────────────────── */
+.leaflet-tooltip {
+  background: rgba(20, 20, 40, 0.92);
+  border: 1px solid #3c3c4d;
+  border-radius: 6px;
+  color: #ccccee;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.leaflet-tooltip::before {
+  display: none;
+}

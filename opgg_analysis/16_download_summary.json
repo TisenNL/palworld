@@ -1,0 +1,34 @@
+{
+  "tiles": {
+    "palpagos": "./public/opgg-map-tiles/palpagos/z{z}/x{x}y{y}.webp",
+    "worldTree": "./public/opgg-map-tiles/world-tree/z{z}/x{x}y{y}.webp",
+    "cdnTemplate": {
+      "palpagos": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles/{z}-{x}-{y}.png?image=q_auto:good,f_webp,w_512&v=2026081102",
+      "worldTree": "https://s-stats-platform-cdn.op.gg/palworld/images/tiles-tree/{z}x{x}x{y}.png?image=q_auto:good,f_webp,w_512&v=2026081102"
+    }
+  },
+  "icons": {
+    "local": "./public/opgg-icons/",
+    "cdnBase": "https://s-stats-platform-cdn.op.gg/palworld/images/"
+  },
+  "leaflet": {
+    "version": "1.9.4",
+    "crs": "L.CRS.Simple",
+    "worldSize": null,
+    "minZoom": 1,
+    "maxZoom": 8,
+    "maxNativeZoom": 4,
+    "tileSize": 256,
+    "zoomSnap": 0,
+    "zoomDelta": 1,
+    "scrollWheelZoom": false
+  },
+  "localStorage": {
+    "collectibles": "palworld:map:checked-collectibles",
+    "keyFormat": {
+      "effigy": "effigy:{x}:{y}",
+      "collectible": "collectible:{type}:{x}:{y}"
+    }
+  },
+  "capturedAt": "2026-09-30T11:26:04.036Z"
+}

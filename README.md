@@ -1,35 +1,179 @@
-# Palworld Checklist
+# Palworld Checklist — Interactive Map
 
-Vue 3, TypeScript, Pinia, PrimeVue, and a local Python helper for OCR and in-game map automation.
+Interactive map and checklist for Palworld, replicating the functionality of [op.gg/palworld/map](https://op.gg/palworld/map) with local progress tracking and optional game automation via a local helper.
 
-## Project structure
-
-- `src/`: Vue application source.
-- `public/`: static files copied into the production build, including game data.
-- `server/`: local HTTP server, OCR, HUD, and native Palworld automation.
-- `scripts/`: Windows protocol registration and helper lifecycle scripts.
-- `tests/`: TypeScript, browser, and Python tests.
-- `tools/`: data generation, validation utilities, source data, and research artifacts.
-- `.cache/`: generated map tiles, downloaded icons, and OCR captures.
-- `.local/`: local progress persisted by the helper.
-
-## Run
+## Quick Start
 
 ```bash
-py -3 run.py
+npm install
+npm run dev
 ```
 
-Builds the Vue app when needed, starts the local helper, and opens `http://127.0.0.1:8765/`. Stop with **Ctrl+C**.
+Open **http://127.0.0.1:5173** in your browser.
 
-On Windows you can also double-click `start.bat` (same entrypoint).
+---
 
-For frontend-only development, use `npm run dev -- --host 0.0.0.0` and open
-`http://localhost:5173/`. The local helper features require `py -3 run.py` so
-the backend is available on port `8765`.
+## Map Features
 
-## Validate
+| Feature | Status |
+|---|---|
+| Leaflet map with pan, zoom and bounds (Palpagos + World Tree) | ✅ |
+| Smooth scroll-wheel zoom (replicates op.gg) | ✅ |
+| ~16,000 markers across 57 categories | ✅ |
+| Icons per marker category | ✅ |
+| Sidebar with per-category filters (toggle on/off) | ✅ |
+| Group-level All/Hide buttons and Collapse All | ✅ |
+| Popup on click with coordinates and Discovered toggle | ✅ |
+| Progress persisted in localStorage (op.gg format) | ✅ |
+| Cursor coordinates in real-time | ✅ |
+| Go-to coordinates input | ✅ |
+| Marker size slider | ✅ |
+| Fullscreen button | ✅ |
+| Responsive layout (sidebar collapses on mobile) | ✅ |
+| World Tree map tab | ✅ |
+| OCR coordinates (requires local helper) | ✅ |
+| HUD marker in-game (requires local helper) | ✅ |
+| Mark-in-game automation (requires local helper) | ✅ |
+| Mouse loop automation (requires local helper) | ✅ |
+| Breeding calculator | ✅ |
+| Cake planner | ✅ |
+| Base Boost calculator | ✅ |
+| Checklist (Lists view) | ✅ |
+| Pal habitat day/night spawns | ❌ (data not available) |
+| URL-share progress export | ❌ (out of scope) |
+
+---
+
+## Updating Map Data
+
+### Tiles (run once or when op.gg updates the map)
 
 ```bash
-npm run validate
-npm run test:e2e
+# Download all tiles from op.gg CDN
+py -3 download_opgg_data.py
+
+# Rename tiles to Leaflet format {z}-{x}-{y}.webp
+node scripts/rename_opgg_tiles.mjs
 ```
+
+Tiles are saved to `public/opgg-map-tiles/palpagos/` and `public/opgg-map-tiles/world-tree/`.
+
+### Marker Data
+
+```bash
+# Download marker JSON from op.gg CDN
+py -3 download_opgg_data.py
+
+# Convert points.json (UE5 coords) → Leaflet lat/lng markers
+node scripts/convert_opgg_points.mjs
+```
+
+Generates:
+- `public/opgg-markers-palpagos.json` — ~16,000 markers for Palpagos Islands
+- `public/opgg-markers-worldtree.json` — ~370 markers for World Tree
+- `public/opgg-marker-counts.json` — counts per type and zone
+
+---
+
+## Project Structure
+
+```
+src/
+  components/
+    layout/          AppShell (header + nav)
+    map/
+      LeafletMapView.vue   ← Leaflet map, tiles, markers, popup
+      MarkerPopup.vue      ← Click popup with discovered toggle
+  domain/
+    opggCoordinates.ts     ← op.gg coordinate system (CRS.Simple)
+    opggMarkerIcons.ts     ← Icon URLs and HTML for divIcon
+    layers.ts              ← Layer definitions for Lists/checklist views
+    breeding.ts / cakes.ts ← Non-map calculators
+  stores/
+    opggMap.ts             ← Markers, filters, progress, camera
+    checklist.ts           ← Lists/breeding/cakes progress (server sync)
+    preferences.ts         ← Sidebar state
+    serverHud.ts           ← Local helper integration
+  styles/
+    leaflet-overrides.css  ← Leaflet reset + dark theme
+    map-markers.css        ← Marker icons, slider, controls
+  types/
+    opggMarker.ts          ← Marker Zod schema + label helpers
+  views/
+    MapView.vue            ← Main map view (sidebar + LeafletMapView)
+    ListsView.vue          ← Checklist by category
+    BreedingView.vue       ← Breeding calculator
+    CakesView.vue          ← Cake planner
+    BaseBoostView.vue      ← Base Boost calculator
+
+public/
+  opgg-map-tiles/
+    palpagos/    {z}-{x}-{y}.webp  (341 tiles z0-z4)
+    world-tree/  {z}-{x}-{y}.webp  (341 tiles z0-z4)
+  opgg-icons/
+    effigies/ eggs/ markers/ resources/  (43 icons)
+  opgg-data/
+    points.json          ← Raw marker data from op.gg (818KB)
+    index.json           ← Groups and counts
+  opgg-markers-palpagos.json    ← Converted Leaflet markers
+  opgg-markers-worldtree.json   ← Converted World Tree markers
+
+scripts/
+  rename_opgg_tiles.mjs         ← Tile renaming utility
+  convert_opgg_points.mjs       ← Data conversion script
+
+server/
+  (Python local helper — OCR, HUD, game automation)
+```
+
+---
+
+## Coordinate System
+
+The map uses **Leaflet CRS.Simple** with `WORLD_SIZE = 256`, matching op.gg exactly.
+
+All marker coordinates in `points.json` are in **Unreal Engine 5 units (cm)**.  
+The conversion to Leaflet LatLng is done by `src/domain/opggCoordinates.ts`.
+
+To display in-game pause menu coordinates:
+```
+ingameX = round((gameY - 158000) / 459)
+ingameY = round((gameX + 123888) / 459)
+ingameZ = round(gameZ / 100)   // in meters
+```
+
+---
+
+## Local Helper (Optional)
+
+The local Python helper enables:
+- **OCR** — read coordinates directly from your Palworld game screen
+- **HUD** — place a marker in the Palworld in-game map
+- **Mark in game** — automated map marking using mouse automation
+- **Mouse loop** — repeat right-click + middle-click for gathering automation
+
+Start the helper via `start.bat` or `py -3 run.py`, then features appear automatically in the map sidebar Tools section.
+
+---
+
+## Development
+
+```bash
+npm run dev          # Dev server at http://127.0.0.1:5173
+npm run build        # Type-check + production build
+npm test             # Unit tests (Vitest)
+npm run typecheck    # TypeScript check only
+npm run lint         # ESLint
+```
+
+---
+
+## Technology
+
+- **Vue 3** + Composition API + TypeScript
+- **Pinia** — state management
+- **Leaflet 1.9.4** — map rendering (CRS.Simple)
+- **PrimeVue** — UI components (other views)
+- **Zod** — runtime data validation
+- **Vite** — build tool
+- Tiles and marker data sourced from [op.gg/palworld/map](https://op.gg/palworld/map)

@@ -1,0 +1,270 @@
+/* ── Marker image div icon (replicates op.gg's palworld-map-marker-image) ── */
+/* The Leaflet divIcon wrapper needs overflow visible */
+.leaflet-marker-icon.palworld-map-marker {
+  background: none !important;
+  border: none !important;
+  overflow: visible !important;
+}
+
+.palworld-map-marker-wrapper {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+.palworld-map-marker-image {
+  display: block;
+  border-radius: 50%;
+  border-width: 2px;
+  border-style: solid;
+  background-size: 75%;
+  background-repeat: no-repeat;
+  background-position: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  transition: opacity 0.15s ease, transform 0.1s ease;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* silhouette = op.gg's image-outline effect (filter inversion for icons on dark bg) */
+.palworld-map-image-silhouette {
+  filter: brightness(1.1) contrast(1.05);
+}
+
+/* checked / discovered state */
+.palworld-map-marker-checked .palworld-map-marker-image {
+  opacity: 0.35;
+  filter: grayscale(0.6) brightness(0.7);
+}
+
+/* hover state */
+.palworld-map-marker-image:hover {
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.7);
+  z-index: 1000 !important;
+}
+
+/* enemy/boss larger icons */
+.palworld-map-marker-lg .palworld-map-marker-image {
+  border-width: 2.5px;
+}
+
+/* field boss level badge */
+.palworld-map-marker-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -4px;
+  background: rgba(10, 15, 30, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 1px 3px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ── Marker range slider (op.gg style) ─────────────────────────────────── */
+.palworld-map-range {
+  --thumb-size: 14px;
+  --track-h: 4px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: linear-gradient(
+    to right,
+    var(--primary, #6c5ce7) 0%,
+    var(--primary, #6c5ce7) var(--range-progress, 50%),
+    #3c3c4d var(--range-progress, 50%),
+    #3c3c4d 100%
+  );
+  border-radius: 999px;
+  height: var(--track-h);
+  outline: none;
+  cursor: pointer;
+}
+
+.palworld-map-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--thumb-size);
+  height: var(--thumb-size);
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--primary, #6c5ce7);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.palworld-map-range::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.palworld-map-range::-moz-range-thumb {
+  width: var(--thumb-size);
+  height: var(--thumb-size);
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--primary, #6c5ce7);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+/* ── Map viewport ────────────────────────────────────────────────────────── */
+.palworld-map-viewport {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Map blur control panels (op.gg style) ──────────────────────────────── */
+.palworld-map-control-blur {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ── Coords bar ──────────────────────────────────────────────────────────── */
+.palworld-map-coords {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 900;
+  background: rgba(26, 26, 46, 0.9);
+  border: 1px solid #3c3c4d;
+  border-radius: 8px;
+  color: #aaaacc;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 10px;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  letter-spacing: 0.02em;
+}
+
+/* ── Zoom controls ───────────────────────────────────────────────────────── */
+.palworld-map-zoom {
+  position: absolute;
+  bottom: 52px;
+  right: 12px;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.palworld-map-zoom button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: rgba(26, 26, 46, 0.92);
+  border: 1px solid #3c3c4d;
+  border-radius: 8px;
+  color: #ccccee;
+  font-size: 18px;
+  font-weight: 300;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 0.15s, color 0.15s;
+}
+
+.palworld-map-zoom button:hover {
+  background: rgba(108, 92, 231, 0.3);
+  border-color: #6c5ce7;
+  color: #fff;
+}
+
+/* ── Zoom percent label ─────────────────────────────────────────────────── */
+.palworld-map-zoom-pct {
+  position: absolute;
+  bottom: 14px;
+  right: 12px;
+  z-index: 900;
+  background: rgba(26, 26, 46, 0.9);
+  border: 1px solid #3c3c4d;
+  border-radius: 6px;
+  color: #8888aa;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 7px;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
+/* ── Fullscreen button ───────────────────────────────────────────────────── */
+.palworld-map-fullscreen-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: rgba(26, 26, 46, 0.92);
+  border: 1px solid #3c3c4d;
+  border-radius: 8px;
+  color: #8888aa;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 0.15s, color 0.15s;
+}
+
+.palworld-map-fullscreen-btn:hover {
+  background: rgba(108, 92, 231, 0.3);
+  border-color: #6c5ce7;
+  color: #fff;
+}
+
+/* ── Go-to coords form ───────────────────────────────────────────────────── */
+.palworld-map-goto {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(26, 26, 46, 0.92);
+  border: 1px solid #3c3c4d;
+  border-radius: 10px;
+  padding: 5px 8px;
+  backdrop-filter: blur(12px);
+}
+
+.palworld-map-goto input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #ccccee;
+  font-size: 12px;
+  font-weight: 600;
+  width: 140px;
+  placeholder-color: #6666aa;
+}
+
+.palworld-map-goto input::placeholder {
+  color: #555577;
+}
+
+.palworld-map-goto button {
+  background: rgba(108, 92, 231, 0.8);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.palworld-map-goto button:hover {
+  background: #6c5ce7;
+}

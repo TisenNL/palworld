@@ -1,1210 +1,962 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
-import Checkbox from 'primevue/checkbox'
-import InputNumber from 'primevue/inputnumber'
-import InputText from 'primevue/inputtext'
-import Slider from 'primevue/slider'
+/**
+ * MapView — vista principal do mapa interativo.
+ * Usa LeafletMapView (op.gg replication) + opggMap store.
+ * Mantém todas as integrações com o servidor helper Python.
+ */
 import { useToast } from 'primevue/usetoast'
-import { computed, nextTick, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
 
-import SafeImage from '@/components/common/SafeImage.vue'
-import CompactPanel from '@/components/layout/CompactPanel.vue'
-import MapCanvas from '@/components/map/MapCanvas.vue'
-import { layerGroups, wtLayerGroups } from '@/domain/layers'
-import { parseCoordinates, formatCoordinatesOpgg } from '@/domain/coordinates'
-import { useChecklistStore } from '@/stores/checklist'
-import { useMapStore } from '@/stores/map'
-import { usePreferencesStore } from '@/stores/preferences'
+import LeafletMapView from '@/components/map/LeafletMapView.vue'
+import { useOpggMapStore } from '@/stores/opggMap'
 import { useServerHudStore } from '@/stores/serverHud'
-import type { MapMarker } from '@/types/data'
+import { formatIngameCoords, toGamePoint, toLatLng, getMapWindow } from '@/domain/opggCoordinates'
+import { markerDisplayName, markerTypeLabel, GROUPS, GROUP_LABELS } from '@/types/opggMarker'
+import type { Marker } from '@/types/opggMarker'
+import type { MapZone } from '@/stores/opggMap'
 
-interface MapCanvasExposed {
-  fitMarkers: () => void
-  centerGame: (x: number, y: number) => void
-  redraw: () => void
+interface LeafletExposed {
+  zoomIn: () => void
+  zoomOut: () => void
+  flyTo: (lat: number, lng: number, zoom?: number) => void
+  centerIngame: (x: number, y: number) => void
+  getMap: () => unknown
 }
 
-const checklist = useChecklistStore()
-const map = useMapStore()
-const preferences = usePreferencesStore()
-const server = useServerHudStore()
-const router = useRouter()
-const toast = useToast()
-const canvas = ref<MapCanvasExposed | null>(null)
-const browseGroup = ref(preferences.values.mapBrowseGroup)
-const popup = ref({ visible: false, x: 0, y: 0 })
-const mouseLoopSeconds = ref(40)
-let cameraTimer: number | undefined
+const mapStore = useOpggMapStore()
+const server   = useServerHudStore()
+const toast    = useToast()
+
+const leafletRef = ref<LeafletExposed | null>(null)
+const sidebarOpen       = ref(true)
+const coordsText        = ref('X / Y')
+const searchInput       = ref('')
+const mouseLoopSeconds  = ref(40)
 const markInGameRunning = ref(false)
-let searchDebounceTimer: number | undefined
 
-function setSearch(value: string): void {
-  window.clearTimeout(searchDebounceTimer)
-  searchDebounceTimer = window.setTimeout(() => {
-    map.search = value
-  }, 180)
-}
+let searchTimer: number | undefined
 
-const visibleCount = computed(() => {
-  if (map.activeMap === 'world-tree') {
-    return map.wtLayers.filter((layer) => preferences.values.mapLayers[layer.id] !== false).length
-  }
-  return checklist.layers.filter((layer) => preferences.values.mapLayers[layer.id]).length
+// ── Initialise ────────────────────────────────────────────────────────────
+onMounted(async () => {
+  await mapStore.initialize()
+  void server.pollGameMarker()
+  void server.pollMouseLoop()
 })
-const layerCounts = computed(() => {
-  const counts = new Map<string, number>()
-  for (const entry of checklist.entries) {
-    counts.set(entry.layerId, (counts.get(entry.layerId) ?? 0) + 1)
-  }
-  return counts
+
+// ── Search debounce ───────────────────────────────────────────────────────
+watch(searchInput, (val) => {
+  clearTimeout(searchTimer)
+  searchTimer = window.setTimeout(() => { mapStore.search = val }, 250)
 })
-const nearestMarker = computed(() =>
-  map.selectedMarker ? map.nearestSameType(map.selectedMarker) : null,
-)
-const searching = computed(() => map.search.trim().length >= 3)
-const selectionCount = computed(() => map.selectedIds.size)
-const totalLayersCount = computed(() =>
-  map.activeMap === 'world-tree' ? map.wtLayers.length : checklist.layers.length,
-)
 
-const wtBrowseGroup = ref('')
+// ── Computed ──────────────────────────────────────────────────────────────
+const activeZone = computed({
+  get: () => mapStore.activeZone,
+  set: (z: MapZone) => { mapStore.setZone(z) },
+})
 
-function wtLayersForGroup(groupId: string) {
-  return map.wtLayers.filter((layer) => layer.group === groupId)
+const markerSizeSliderStyle = computed(() => ({
+  '--range-progress': `${mapStore.markerSize}%`,
+}))
+
+// Visible types for a group: true if at least one type in this group is visible
+function isGroupPartiallyVisible(group: string): boolean {
+  const types = mapStore.typesByGroup[group] ?? []
+  if (types.length === 0) return false
+  return types.some(t => !mapStore.visibleTypes.has(t))
 }
 
-function toggleWtGroup(groupId: string, event: Event): void {
-  const open = (event.currentTarget as HTMLDetailsElement).open
-  if (open) wtBrowseGroup.value = groupId
-  else if (wtBrowseGroup.value === groupId) wtBrowseGroup.value = ''
+function isTypeActive(type: string): boolean {
+  return !mapStore.visibleTypes.has(type)
 }
 
-function setAllWt(visible: boolean): void {
-  for (const layer of map.wtLayers) preferences.values.mapLayers[layer.id] = visible
-  if (visible) {
-    void nextTick(() => canvas.value?.fitMarkers())
-  }
+// ── Zone switch ───────────────────────────────────────────────────────────
+async function switchZone(zone: MapZone) {
+  await mapStore.setZone(zone)
 }
 
-function panelOpen(key: string, fallback = true): boolean {
-  return preferences.values.sideBlockOpen[key] ?? fallback
+// ── Fly to marker ─────────────────────────────────────────────────────────
+function flyToMarker(marker: Marker) {
+  leafletRef.value?.flyTo(marker.lat, marker.lng, 5)
+  mapStore.selectMarker(marker)
 }
 
-function setPanelOpen(key: string, value: boolean): void {
-  preferences.values.sideBlockOpen[key] = value
-}
-
-function setGroup(value: string): void {
-  browseGroup.value = value
-  preferences.values.mapBrowseGroup = value
-}
-
-function layersForGroup(groupId: string) {
-  return checklist.layers.filter((layer) => layer.group === groupId)
-}
-
-function toggleGroup(groupId: string, event: Event): void {
-  const open = (event.currentTarget as HTMLDetailsElement).open
-  if (open) setGroup(groupId)
-  else if (browseGroup.value === groupId) setGroup('')
-}
-
-function updateCamera(next: { x: number; y: number; scale: number }): void {
-  Object.assign(map.camera, next)
-  window.clearTimeout(cameraTimer)
-  cameraTimer = window.setTimeout(map.saveCamera, 250)
-}
-
-function centerTyped(): void {
-  const point = parseCoordinates(map.coordinates)
-  if (!point) {
-    toast.add({
-      severity: 'warn',
-      summary: 'Invalid coordinates',
-      detail: 'Use the X, Y format. Example: -16, -339.',
-      life: 3000,
-    })
-    return
-  }
-  canvas.value?.centerGame(point.x, point.y)
-  map.hoverText = formatCoordinatesOpgg(point.x, point.y)
-}
-
-async function runOcr(): Promise<void> {
+// ── OCR ───────────────────────────────────────────────────────────────────
+async function runOcr() {
   if (!server.online) {
     window.location.href = 'palchecklist://start'
-    toast.add({
-      severity: 'info',
-      summary: 'Starting local helper',
-      detail: 'Wait a few seconds and try OCR again.',
-      life: 4000,
-    })
+    toast.add({ severity: 'info', summary: 'Starting local helper',
+      detail: 'Wait a few seconds and try OCR again.', life: 4000 })
     return
   }
   try {
     const value = await server.readCoordinates()
     if (value) {
-      map.coordinates = value
-      centerTyped()
+      searchInput.value = value
+      // parse "X -612 · Y -17" or "-612, -17"
+      const m = value.match(/(-?\d+)[,\s·]+\s*(?:Y\s*)?(-?\d+)/)
+      if (m) {
+        const x = parseInt(m[1]!), y = parseInt(m[2]!)
+        const { gameX, gameY } = toGamePoint(x, y)
+        const mw = getMapWindow(mapStore.activeZone)
+        const [lat, lng] = toLatLng(mw, gameX, gameY)
+        leafletRef.value?.flyTo(lat, lng, 5)
+      }
     }
   } catch {
-    toast.add({
-      severity: 'error',
-      summary: 'OCR unavailable',
-      detail: server.error || 'Could not read the coordinates.',
-      life: 3500,
-    })
+    toast.add({ severity: 'error', summary: 'OCR unavailable',
+      detail: server.error || 'Could not read the coordinates.', life: 3500 })
   }
 }
 
-/** Left-click on map icon: toggle selection (no popup). */
-function handleSelect(marker: MapMarker | null): void {
-  if (!marker) return
-  map.toggleSelected(marker.id)
-}
-
-/** Right-click on map icon: open popup + optionally toggle HUD. */
-function openPopup(marker: MapMarker | null, position: { x: number; y: number }): void {
-  map.showMarker(marker)
-  popup.value = {
-    visible: Boolean(marker),
-    x: Math.min(position.x + 10, window.innerWidth - 260),
-    y: Math.min(position.y + 10, window.innerHeight - 180),
-  }
-}
-
-async function contextMarker(marker: MapMarker, position: { x: number; y: number }): Promise<void> {
-  openPopup(marker, position)
-  if (!server.online) return
-  try {
-    const enabled = await server.toggleHud(marker.item, marker.label)
-    toast.add({
-      severity: 'info',
-      summary: enabled ? 'HUD enabled' : 'HUD disabled',
-      detail: marker.label,
-      life: 2200,
-    })
-  } catch {
-    toast.add({
-      severity: 'error',
-      summary: 'HUD failed',
-      detail: 'The local helper did not respond.',
-      life: 3000,
-    })
-  }
-}
-
-function goToList(): void {
-  const marker = map.selectedMarker
-  if (!marker) return
-  void router.push({ path: '/lists', query: { item: `${marker.storage}:${marker.item.id}` } })
-}
-
-function toggleSelected(): void {
-  const marker = map.selectedMarker
-  if (!marker) return
-  marker.done = checklist.toggleDone(marker.storage, marker.item.id)
-}
-
-function goToNearest(): void {
-  const nearest = nearestMarker.value
-  if (!nearest) return
-  canvas.value?.centerGame(nearest.marker.item.x, nearest.marker.item.y)
-  map.showMarker(nearest.marker)
-  map.hoverText = `${formatCoordinatesOpgg(nearest.marker.item.x, nearest.marker.item.y, nearest.marker.item.z)} · ${nearest.marker.label} · ${nearest.distanceMeters.toLocaleString('en-US')} m away`
-}
-
-const MARK_MAX_RETRIES = 3
-
-/**
- * Mark in game: iterate through all selected markers one by one.
- * Each marker is retried up to MARK_MAX_RETRIES times on error before
- * stopping the queue. Cancelled (Esc) stops immediately without retry.
- */
-async function markInGame(): Promise<void> {
-  if (markInGameRunning.value) return
-  const queue = [...map.selectedMarkers]
-  if (!queue.length) return
-
+// ── HUD toggle for selected marker ────────────────────────────────────────
+async function toggleHudForSelected() {
+  const mk = mapStore.selectedMarker
+  if (!mk) return
   if (!server.online) {
-    window.location.href = 'palchecklist://start'
-    toast.add({
-      severity: 'info',
-      summary: 'Starting local helper',
-      detail: 'Keep the Palworld map open, then try again.',
-      life: 4000,
-    })
+    toast.add({ severity: 'warn', summary: 'Server offline',
+      detail: 'Start the local helper first.', life: 3000 })
     return
   }
+  // serverHud.toggleHud expects a CoordinateItem-like {x, y}
+  // we pass ingame coords
+  const fakeItem = { id: mk.id, x: mk.ingameX, y: mk.ingameY }
+  const label = markerDisplayName(mk)
+  try {
+    const enabled = await server.toggleHud(fakeItem as any, label)
+    toast.add({ severity: 'info',
+      summary: enabled ? 'HUD enabled' : 'HUD disabled', detail: label, life: 2200 })
+  } catch {
+    toast.add({ severity: 'error', summary: 'HUD failed',
+      detail: 'The local helper did not respond.', life: 3000 })
+  }
+}
 
+// ── Mark in game ──────────────────────────────────────────────────────────
+const MARK_MAX_RETRIES = 3
+
+async function markInGame() {
+  const mk = mapStore.selectedMarker
+  if (!mk || markInGameRunning.value) return
+  if (!server.online) {
+    window.location.href = 'palchecklist://start'
+    toast.add({ severity: 'info', summary: 'Starting local helper',
+      detail: 'Keep the Palworld map open, then try again.', life: 4000 })
+    return
+  }
   markInGameRunning.value = true
   try {
-    for (const marker of queue) {
-      let attempt = 0
-      let finalStatus = ''
-
-      while (attempt < MARK_MAX_RETRIES) {
-        attempt++
-
-        try {
-          await server.startGameMarker(marker.item)
-          if (attempt === 1) {
-            toast.add({
-              severity: 'info',
-              summary: 'Automation started',
-              detail: `${marker.label} — Palworld will receive focus automatically. Press Esc to cancel.`,
-              life: 5000,
-            })
-          } else {
-            toast.add({
-              severity: 'warn',
-              summary: `Retrying (${attempt}/${MARK_MAX_RETRIES})`,
-              detail: marker.label,
-              life: 3000,
-            })
-          }
-        } catch {
-          toast.add({
-            severity: 'error',
-            summary: 'Automation unavailable',
-            detail: server.error || 'Could not start game marker automation.',
-            life: 4000,
-          })
-          finalStatus = 'error'
-          break
-        }
-
-        finalStatus = await waitForGameMarkerDone()
-
-        // Cancelled means user pressed Esc — stop immediately, no retry.
-        if (finalStatus === 'cancelled') break
-
-        // Completed — move to next marker.
-        if (finalStatus === 'completed') break
-
-        // Error — will retry unless we've hit the limit.
-        if (attempt < MARK_MAX_RETRIES) {
-          toast.add({
-            severity: 'warn',
-            summary: 'Retrying after error',
-            detail: server.gameMarker?.message || server.gameMarker?.error || marker.label,
-            life: 3000,
-          })
-          // Brief pause before retry so the server resets cleanly.
-          await delay(800)
-        }
+    const fakeItem = { id: mk.id, x: mk.ingameX, y: mk.ingameY }
+    let attempt = 0
+    let finalStatus = ''
+    while (attempt < MARK_MAX_RETRIES) {
+      attempt++
+      try {
+        await server.startGameMarker(fakeItem as any)
+        toast.add({ severity: 'info', summary: 'Automation started',
+          detail: `${markerDisplayName(mk)} — Press Esc to cancel.`, life: 5000 })
+      } catch {
+        toast.add({ severity: 'error', summary: 'Automation unavailable',
+          detail: server.error || 'Could not start.', life: 4000 })
+        finalStatus = 'error'; break
       }
-
-      if (finalStatus !== 'completed') {
-        const isCancelled = finalStatus === 'cancelled'
-        toast.add({
-          severity: isCancelled ? 'warn' : 'error',
-          summary: isCancelled ? 'Automation cancelled' : 'Automation failed',
-          detail: server.gameMarker?.message || server.gameMarker?.error || marker.label,
-          life: 5000,
-        })
-        break
-      }
+      finalStatus = await waitForGameMarkerDone()
+      if (finalStatus === 'cancelled' || finalStatus === 'completed') break
+      if (attempt < MARK_MAX_RETRIES) await delay(800)
+    }
+    if (finalStatus !== 'completed') {
+      toast.add({ severity: finalStatus === 'cancelled' ? 'warn' : 'error',
+        summary: finalStatus === 'cancelled' ? 'Automation cancelled' : 'Automation failed',
+        detail: server.gameMarker?.message || '', life: 5000 })
     }
   } finally {
     markInGameRunning.value = false
   }
 }
 
-/**
- * Polls /game-marker/state until the automation reaches a terminal status
- * (completed, cancelled, or error) with active=false, then returns that status.
- *
- * Keyed off status string + active flag — not the volatile boolean gameMarkerBusy —
- * so it is immune to the race where active flips true→false before the first poll.
- */
 async function waitForGameMarkerDone(): Promise<string> {
   const TERMINAL = new Set(['completed', 'cancelled', 'error'])
-
   for (;;) {
-    // Read the reactive state that the store auto-polls every 150ms while active.
-    const state = server.gameMarker
-    if (state && !state.active && TERMINAL.has(state.status)) {
-      return state.status
-    }
-    // When active=false the store stops auto-polling, so drive one explicit poll
-    // to pick up the final state, then check again immediately.
-    if (state && !state.active) {
+    const s = server.gameMarker
+    if (s && !s.active && TERMINAL.has(s.status)) return s.status
+    if (s && !s.active) {
       await server.pollGameMarker()
-      const final = server.gameMarker
-      if (final && TERMINAL.has(final.status)) return final.status
+      const f = server.gameMarker
+      if (f && TERMINAL.has(f.status)) return f.status
     }
-    // Yield for one poll cycle before reading again.
     await delay(150)
   }
 }
 
 function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms))
+  return new Promise(r => window.setTimeout(r, ms))
 }
 
-async function toggleMouseLoop(): Promise<void> {
+// ── Mouse loop ────────────────────────────────────────────────────────────
+async function toggleMouseLoop() {
   if (!server.online) {
     window.location.href = 'palchecklist://start'
-    toast.add({
-      severity: 'info',
-      summary: 'Starting local helper',
-      detail: 'Wait a few seconds and try again.',
-      life: 4000,
-    })
+    toast.add({ severity: 'info', summary: 'Starting local helper',
+      detail: 'Wait a few seconds and try again.', life: 4000 })
     return
   }
   try {
     if (server.mouseLoopBusy) {
       await server.stopMouseLoop()
-      toast.add({
-        severity: 'info',
-        summary: 'Mouse loop stopped',
-        detail: 'Right/middle click loop was cancelled.',
-        life: 2500,
-      })
-      return
+      toast.add({ severity: 'info', summary: 'Mouse loop stopped', life: 2500 })
+    } else {
+      const seconds = Math.max(1, Math.round(Number(mouseLoopSeconds.value) || 40))
+      mouseLoopSeconds.value = seconds
+      await server.startMouseLoop(seconds)
+      toast.add({ severity: 'success', summary: 'Mouse loop started',
+        detail: `Every ${seconds}s: focus Palworld, hold RMB, click MMB.`, life: 4500 })
     }
-    const seconds = Math.max(1, Math.round(Number(mouseLoopSeconds.value) || 40))
-    mouseLoopSeconds.value = seconds
-    await server.startMouseLoop(seconds)
-    toast.add({
-      severity: 'success',
-      summary: 'Mouse loop started',
-      detail: `Every ${seconds}s: focus Palworld, hold RMB, click MMB. Esc stops.`,
-      life: 4500,
-    })
   } catch {
-    toast.add({
-      severity: 'error',
-      summary: 'Mouse loop unavailable',
-      detail: server.error || 'Could not start the mouse combo loop.',
-      life: 4000,
-    })
+    toast.add({ severity: 'error', summary: 'Mouse loop unavailable',
+      detail: server.error || 'Could not start.', life: 4000 })
   }
 }
-
-function setAll(visible: boolean): void {
-  map.setAllLayers(visible)
-  // When showing all layers, re-fit the camera so every marker is visible —
-  // the saved camera position may be stale or outside the current marker bounds.
-  if (visible) {
-    void nextTick(() => canvas.value?.fitMarkers())
-  }
-}
-
-function toggleSidebar(): void {
-  preferences.values.sidebarCollapsed = !preferences.values.sidebarCollapsed
-}
-
-function focusSearchResult(marker: MapMarker): void {
-  preferences.values.mapLayers[marker.layerId] = true
-  map.showMarker(marker)
-  canvas.value?.centerGame(marker.item.x, marker.item.y)
-  popup.value = { visible: true, x: 24, y: 24 }
-}
-
-function toggleSearchResultDone(marker: MapMarker, done: boolean): void {
-  checklist.setDone(marker.storage, marker.item.id, done)
-}
-
-map.restoreCamera()
-// Pre-load WT data so first switch to World Tree is instant
-void map.loadWtData()
-void server.pollGameMarker()
-void server.pollMouseLoop()
 </script>
 
 <template>
-  <div class="workspace map-view">
-    <h1 class="sr-only">Interactive map</h1>
-    <aside class="sidebar map-sidebar" :aria-hidden="preferences.values.sidebarCollapsed">
-      <div class="sidebar-scroll">
-        <!-- ── Map selector ── -->
-        <div class="map-selector">
+  <div class="map-view">
+    <!-- ── Sidebar ─────────────────────────────────────────────────────── -->
+    <aside class="map-sidebar" :class="{ 'map-sidebar--open': sidebarOpen }">
+
+      <!-- Sidebar header -->
+      <div class="map-sidebar__header">
+        <div class="map-sidebar__zone-btns">
           <button
-            class="map-btn"
-            :class="{ active: map.activeMap === 'palpagos' }"
-            @click="map.setActiveMap('palpagos')"
+            class="zone-btn"
+            :class="{ 'zone-btn--active': mapStore.activeZone === 'palpagos' }"
+            type="button"
+            @click="switchZone('palpagos')"
           >
-            <i class="pi pi-map" aria-hidden="true" />
-            Palpagos
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/>
+              <path d="M15 5.764v15"/><path d="M9 3.236v15"/>
+            </svg>
+            Palpagos Islands
           </button>
           <button
-            class="map-btn"
-            :class="{ active: map.activeMap === 'world-tree' }"
-            @click="map.setActiveMap('world-tree')"
+            class="zone-btn"
+            :class="{ 'zone-btn--active': mapStore.activeZone === 'world-tree' }"
+            type="button"
+            @click="switchZone('world-tree')"
           >
-            <i class="pi pi-sparkles" aria-hidden="true" />
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M17 14c.7-.7 3-1.8 3-5 0-3.5-3-5-5-5"/><path d="M7 14c-.7-.7-3-1.8-3-5 0-3.5 3-5 5-5"/>
+              <path d="M12 22V8"/><path d="M9 22h6"/>
+            </svg>
             World Tree
           </button>
         </div>
 
-        <CompactPanel
-          title="Categories"
-          :open="panelOpen('map-categories')"
-          @update:open="setPanelOpen('map-categories', $event)"
-        >
-          <InputText
-            :model-value="map.search"
-            fluid
-            placeholder="Procurar no mapa"
-            @update:model-value="setSearch(String($event))"
+        <!-- Action buttons -->
+        <div class="map-sidebar__actions">
+          <button type="button" class="action-btn" @click="mapStore.setAllVisible(true)">All</button>
+          <button type="button" class="action-btn action-btn--secondary" @click="mapStore.resetFilters()">Reset</button>
+          <button type="button" class="action-btn action-btn--icon" title="Collapse all groups"
+                  @click="mapStore.collapseAllGroups()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/>
+            </svg>
+          </button>
+          <button type="button" class="action-btn action-btn--icon" title="Hide sidebar"
+                  @click="sidebarOpen = false">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m15 18-6-6 6-6"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Scrollable content -->
+      <div class="map-sidebar__scroll">
+
+        <!-- Search -->
+        <div class="map-sidebar__search">
+          <input
+            v-model="searchInput"
+            type="search"
+            class="map-search-input"
+            placeholder="Search markers…"
+            aria-label="Search markers"
           />
-          <template v-if="searching">
-            <p class="search-meta">
-              {{ map.searchResults.length.toLocaleString('pt-BR') }} resultado(s)
-            </p>
-            <div class="search-results">
-              <label
-                v-for="marker in map.searchResults"
-                :key="marker.id"
-                class="search-result"
-                :class="{ active: map.selectedMarker?.id === marker.id, done: marker.done }"
+        </div>
+
+        <!-- Loading / error -->
+        <div v-if="mapStore.loading" class="map-sidebar__status">Loading…</div>
+        <div v-else-if="mapStore.error" class="map-sidebar__status map-sidebar__status--error">
+          {{ mapStore.error }}
+        </div>
+
+        <!-- Category groups -->
+        <template v-else>
+          <div
+            v-for="group in GROUPS"
+            :key="group"
+            class="filter-group"
+          >
+            <!-- Group header -->
+            <div class="filter-group__header">
+              <button
+                class="filter-group__toggle"
+                type="button"
+                :aria-expanded="mapStore.expandedGroups.has(group)"
+                @click="mapStore.toggleGroup(group)"
               >
-                <Checkbox
-                  :model-value="checklist.isDone(marker.storage, marker.item.id)"
-                  binary
-                  @update:model-value="toggleSearchResultDone(marker, Boolean($event))"
-                  @click.stop
-                />
-                <button type="button" class="search-result-main" @click="focusSearchResult(marker)">
-                  <span class="layer-swatch" :style="{ background: marker.color }" />
-                  <span class="search-result-text">
-                    <span class="search-result-label">{{ marker.label }}</span>
-                    <small>{{ marker.item.x }}, {{ marker.item.y }}</small>
+                <svg
+                  class="filter-group__chevron"
+                  :class="{ 'filter-group__chevron--open': mapStore.expandedGroups.has(group) }"
+                  xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6"/>
+                </svg>
+                {{ GROUP_LABELS[group] }}
+                <span class="filter-group__count">
+                  {{ mapStore.countsByType[group] ?? Object.entries(mapStore.countsByType).filter(([k]) => (mapStore.typesByGroup[group] ?? []).includes(k)).reduce((s, [, v]) => s + v, 0) }}
+                </span>
+              </button>
+              <button
+                class="filter-group__all-btn"
+                type="button"
+                @click="mapStore.setGroupVisible(group, isGroupPartiallyVisible(group) ? false : true)"
+              >
+                {{ isGroupPartiallyVisible(group) ? 'Hide' : 'All' }}
+              </button>
+            </div>
+
+            <!-- Type list -->
+            <ul
+              v-show="mapStore.expandedGroups.has(group)"
+              class="filter-group__list"
+            >
+              <li
+                v-for="type in (mapStore.typesByGroup[group] ?? [])"
+                :key="type"
+              >
+                <button
+                  class="filter-type-btn"
+                  :class="{ 'filter-type-btn--active': isTypeActive(type), 'filter-type-btn--inactive': !isTypeActive(type) }"
+                  type="button"
+                  :aria-pressed="isTypeActive(type)"
+                  @click="mapStore.toggleType(type)"
+                >
+                  <span class="filter-type-btn__icon" v-if="true">
+                    <!-- Icon slot: inline background-image -->
+                  </span>
+                  <span class="filter-type-btn__label">
+                    {{ markerTypeLabel(type) }}
+                  </span>
+                  <span class="filter-type-btn__count">
+                    {{ mapStore.countsByType[type] ?? 0 }}
                   </span>
                 </button>
-              </label>
-              <p v-if="!map.searchResults.length" class="search-empty">Nenhum resultado.</p>
-            </div>
-          </template>
-          <template v-else>
-            <div class="quick-actions">
-              <Button
-                label="All"
-                size="small"
-                text
-                @click="map.activeMap === 'world-tree' ? setAllWt(true) : setAll(true)"
-              />
-              <Button
-                label="Hide"
-                size="small"
-                text
-                severity="secondary"
-                @click="map.activeMap === 'world-tree' ? setAllWt(false) : setAll(false)"
-              />
-            </div>
-            <div class="category-accordions">
-              <template v-if="map.activeMap === 'world-tree'">
-                <details
-                  v-for="group in wtLayerGroups"
-                  :key="group.id"
-                  class="category-section"
-                  :open="wtBrowseGroup === group.id"
-                  @toggle="toggleWtGroup(group.id, $event)"
-                >
-                  <summary>{{ group.label }}</summary>
-                  <div class="layer-browser">
-                    <label
-                      v-for="layer in wtLayersForGroup(group.id)"
-                      :key="layer.id"
-                      class="layer-check"
-                    >
-                      <Checkbox
-                        :model-value="preferences.values.mapLayers[layer.id]"
-                        binary
-                        @update:model-value="
-                          preferences.values.mapLayers[layer.id] = Boolean($event)
-                        "
-                      />
-                      <span class="layer-swatch" :style="{ background: layer.color }" />
-                      <SafeImage
-                        v-if="layer.iconUrl"
-                        class="layer-image"
-                        :src="layer.iconUrl"
-                        :fallback-label="layer.label"
-                      />
-                      <span class="layer-label">{{ layer.label }}</span>
-                    </label>
-                  </div>
-                </details>
-              </template>
-              <template v-else>
-                <details
-                  v-for="group in layerGroups"
-                  :key="group.id"
-                  class="category-section"
-                  :open="browseGroup === group.id"
-                  @toggle="toggleGroup(group.id, $event)"
-                >
-                  <summary>{{ group.label }}</summary>
-                  <div class="layer-browser">
-                    <label
-                      v-for="layer in layersForGroup(group.id)"
-                      :key="layer.id"
-                      class="layer-check"
-                    >
-                      <Checkbox
-                        :model-value="preferences.values.mapLayers[layer.id]"
-                        binary
-                        @update:model-value="
-                          preferences.values.mapLayers[layer.id] = Boolean($event)
-                        "
-                      />
-                      <span class="layer-swatch" :style="{ background: layer.color }" />
-                      <SafeImage
-                        v-if="layer.iconUrl"
-                        class="layer-image"
-                        :src="layer.iconUrl"
-                        :fallback-label="layer.label"
-                      />
-                      <span class="layer-label">{{ layer.label }}</span>
-                      <span v-if="layer.label.endsWith(' Cluster')" class="layer-count">
-                        {{ layerCounts.get(layer.id) ?? 0 }}
-                      </span>
-                    </label>
-                  </div>
-                </details>
-              </template>
-            </div>
-          </template>
-        </CompactPanel>
-
-        <CompactPanel
-          title="Display"
-          :open="panelOpen('map-display', false)"
-          @update:open="setPanelOpen('map-display', $event)"
-        >
-          <div class="display-options">
-            <div class="slider-field">
-              <span>Menu width</span>
-              <Slider v-model="preferences.values.sidebarWidth" :min="260" :max="620" />
-            </div>
-            <div class="slider-field">
-              <span>Transparency</span>
-              <Slider v-model="preferences.values.sidebarTransparency" :min="0" :max="70" />
-            </div>
+              </li>
+            </ul>
           </div>
-        </CompactPanel>
+        </template>
 
-        <CompactPanel
-          title="Tools"
-          :open="panelOpen('map-tools', true)"
-          @update:open="setPanelOpen('map-tools', $event)"
-        >
-          <div class="tool-actions">
-            <div class="coordinate-row">
-              <InputText
-                v-model="map.coordinates"
-                placeholder="-16, -339"
-                aria-label="Coordinates"
-                @keydown.enter="centerTyped"
+        <!-- Marker size slider -->
+        <div class="map-sidebar__size-row">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+               fill="none" stroke="#6666aa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
+          </svg>
+          <input
+            v-model.number="mapStore.markerSize"
+            type="range"
+            class="palworld-map-range"
+            min="0"
+            max="100"
+            :style="markerSizeSliderStyle"
+            aria-label="Marker size"
+          />
+        </div>
+
+        <!-- Tools section -->
+        <details class="tools-panel" open>
+          <summary>Tools</summary>
+          <div class="tools-panel__body">
+            <!-- Coordinates / OCR -->
+            <div class="tools-row">
+              <input
+                v-model="searchInput"
+                type="text"
+                class="coords-input"
+                placeholder="-612, -17"
+                aria-label="Go to coordinates"
               />
-              <Button
-                icon="pi pi-camera"
-                severity="secondary"
-                aria-label="Read coordinates from screen"
-                :loading="server.ocrBusy"
+              <button
+                class="icon-btn"
+                type="button"
+                :disabled="server.ocrBusy"
+                title="Read coordinates from screen (OCR)"
+                aria-label="OCR coordinates"
                 @click="runOcr"
-              />
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 2-2h16"/>
+                  <path d="M22 11a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H4"/>
+                  <path d="m7 15 5 5 5-5"/>
+                </svg>
+              </button>
             </div>
-            <div class="mouse-loop-row">
-              <InputNumber
-                v-model="mouseLoopSeconds"
-                :min="1"
-                :max="3600"
-                :disabled="server.mouseLoopBusy"
-                suffix=" s"
-                fluid
-                input-class="mouse-loop-input"
-                aria-label="Mouse loop interval seconds"
-              />
-              <Button
-                :label="server.mouseLoopBusy ? 'Stop' : 'Loop'"
-                :icon="server.mouseLoopBusy ? 'pi pi-stop' : 'pi pi-play'"
-                :severity="server.mouseLoopBusy ? 'danger' : 'help'"
-                :outlined="!server.mouseLoopBusy"
-                size="small"
-                :aria-label="server.mouseLoopBusy ? 'Stop mouse loop' : 'Start mouse loop'"
-                :title="
-                  server.mouseLoopBusy
-                    ? server.mouseLoop?.message || 'Stop mouse loop'
-                    : 'Hold RMB + middle click loop'
-                "
-                @click="toggleMouseLoop"
-              />
-            </div>
-            <small v-if="server.mouseLoopBusy" class="mouse-loop-status">
-              {{ server.mouseLoop?.message || 'Mouse loop running' }}
-            </small>
-            <Button
-              label="Fit to content"
-              icon="pi pi-expand"
-              size="small"
-              outlined
-              @click="canvas?.fitMarkers()"
-            />
-            <Button
-              v-if="server.health?.active"
-              label="Stop HUD"
-              icon="pi pi-stop-circle"
-              size="small"
-              severity="danger"
-              outlined
-              @click="server.clearHud"
-            />
 
-            <!-- Mark in game section -->
-            <div v-if="selectionCount > 0 || server.gameMarkerBusy" class="mark-in-game-section">
-              <p class="selection-count">
-                {{ selectionCount }} marker{{ selectionCount !== 1 ? 's' : '' }} selected
-                <button
-                  v-if="selectionCount > 0"
-                  type="button"
-                  class="clear-selection"
-                  aria-label="Clear selection"
-                  @click="map.clearSelected()"
-                >
-                  ×
-                </button>
-              </p>
-              <div v-if="server.gameMarkerBusy" class="game-marker-progress">
-                <span>{{ server.gameMarker?.message }}</span>
-                <small v-if="server.gameMarker?.current">
-                  {{ server.gameMarker.current.join(', ') }}
-                  <template v-if="server.gameMarker.distanceMeters !== null">
-                    · {{ server.gameMarker.distanceMeters.toLocaleString('en-US') }} m
-                  </template>
-                </small>
-                <Button
-                  label="Cancel"
-                  icon="pi pi-times"
-                  size="small"
-                  severity="danger"
-                  text
-                  @click="server.cancelGameMarker"
-                />
-              </div>
-              <Button
-                v-else
-                label="Mark in game"
-                icon="pi pi-map-marker"
-                size="small"
-                severity="contrast"
-                :disabled="selectionCount === 0 || markInGameRunning"
-                :aria-label="`Mark ${selectionCount} selected marker${selectionCount !== 1 ? 's' : ''} in game`"
-                @click="markInGame"
+            <!-- Mouse loop -->
+            <div class="tools-row">
+              <input
+                v-model.number="mouseLoopSeconds"
+                type="number"
+                class="coords-input"
+                :min="1" :max="3600"
+                :disabled="server.mouseLoopBusy"
+                aria-label="Mouse loop interval (seconds)"
               />
-              <small v-if="!server.gameMarkerBusy" class="game-marker-hint">
-                Open the Palworld map at maximum zoom in borderless mode. Focus, movement and
-                confirmation are automatic.
-              </small>
+              <button
+                class="icon-btn"
+                :class="{ 'icon-btn--danger': server.mouseLoopBusy }"
+                type="button"
+                :title="server.mouseLoopBusy ? 'Stop mouse loop' : 'Start mouse loop'"
+                :aria-label="server.mouseLoopBusy ? 'Stop' : 'Start loop'"
+                @click="toggleMouseLoop"
+              >
+                <svg v-if="!server.mouseLoopBusy" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polygon points="6 3 20 12 6 21 6 3"/>
+                </svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect width="4" height="16" x="6" y="4"/><rect width="4" height="16" x="14" y="4"/>
+                </svg>
+              </button>
             </div>
+
+            <!-- Mark in game -->
+            <template v-if="mapStore.selectedMarker">
+              <div class="tools-row">
+                <button
+                  class="primary-btn"
+                  type="button"
+                  :disabled="markInGameRunning || server.gameMarkerBusy"
+                  @click="markInGame"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                       fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
+                  </svg>
+                  Mark in game
+                </button>
+                <button
+                  v-if="server.health?.active"
+                  class="icon-btn icon-btn--danger"
+                  type="button"
+                  title="Stop HUD"
+                  @click="server.clearHud"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                       fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect width="18" height="18" x="3" y="3" rx="2"/>
+                  </svg>
+                </button>
+              </div>
+              <div v-if="server.gameMarkerBusy" class="tools-status">
+                {{ server.gameMarker?.message }}
+                <button type="button" class="link-btn" @click="server.cancelGameMarker">Cancel</button>
+              </div>
+            </template>
           </div>
-        </CompactPanel>
+        </details>
       </div>
-      <div class="sidebar-footer">
-        <span class="server-status"
-          ><i class="status-dot" :class="{ online: server.online }" />{{
-            server.online ? 'Server connected' : 'Server offline'
-          }}</span
-        >
-        <span>{{ visibleCount }}/{{ totalLayersCount }}</span>
+
+      <!-- Footer -->
+      <div class="map-sidebar__footer">
+        <span class="server-dot" :class="{ 'server-dot--online': server.online }" />
+        <span>{{ server.online ? 'Connected' : 'Offline' }}</span>
+        <span class="map-sidebar__footer-count">
+          {{ mapStore.filteredMarkers.length.toLocaleString() }} markers
+        </span>
       </div>
     </aside>
 
+    <!-- Show sidebar button (when hidden) -->
     <button
+      v-if="!sidebarOpen"
+      class="sidebar-show-btn"
       type="button"
-      class="sidebar-edge-toggle"
-      :aria-label="preferences.values.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
-      :title="preferences.values.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
-      @click="toggleSidebar"
+      aria-label="Show sidebar"
+      @click="sidebarOpen = true"
     >
-      <i
-        :class="preferences.values.sidebarCollapsed ? 'pi pi-angle-right' : 'pi pi-angle-left'"
-        aria-hidden="true"
-      />
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+           fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m9 18 6-6-6-6"/>
+      </svg>
     </button>
 
-    <section class="map-stage" @click.self="popup.visible = false">
-      <MapCanvas
-        ref="canvas"
-        :markers="map.activeMap === 'world-tree' ? map.wtMarkers : map.markers"
-        :camera="map.camera"
-        :map-zone="map.activeMap"
-        :selected-ids="map.selectedIds"
-        @camera-change="updateCamera"
-        @select="handleSelect"
-        @context="contextMarker"
-        @hover="map.hoverText = $event"
+    <!-- ── Map viewport ─────────────────────────────────────────────────── -->
+    <div class="palworld-map-viewport">
+      <LeafletMapView
+        ref="leafletRef"
+        :map-zone="mapStore.activeZone"
+        @coords-update="coordsText = $event"
+        @map-ready="() => {}"
       />
-      <div class="map-status">
-        {{ map.hoverText || 'Centered on (—, —)' }}
-      </div>
-      <div
-        v-if="popup.visible && map.selectedMarker"
-        class="marker-popup"
-        :style="{ left: `${popup.x}px`, top: `${popup.y}px` }"
-        role="dialog"
-        aria-live="polite"
-      >
-        <button type="button" class="popup-close" aria-label="Close" @click="popup.visible = false">
-          ×
-        </button>
-        <span class="popup-type">{{ map.selectedMarker.layerId }}</span>
-        <strong>{{ map.selectedMarker.label }}</strong>
-        <small>{{ map.selectedMarker.item.x }}, {{ map.selectedMarker.item.y }}</small>
-        <div class="popup-actions">
-          <Button
-            :label="map.selectedMarker.done ? 'Pending' : 'Complete'"
-            :icon="map.selectedMarker.done ? 'pi pi-undo' : 'pi pi-check'"
-            size="small"
-            @click="toggleSelected"
-          />
-          <Button
-            label="Open list"
-            icon="pi pi-list"
-            size="small"
-            severity="secondary"
-            outlined
-            @click="goToList"
-          />
-          <Button
-            v-if="nearestMarker"
-            :label="`Nearest · ${nearestMarker.distanceMeters.toLocaleString('en-US')} m`"
-            icon="pi pi-directions"
-            size="small"
-            severity="secondary"
-            outlined
-            @click="goToNearest"
-          />
-        </div>
-      </div>
-    </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.map-sidebar {
+/* ── Layout ────────────────────────────────────────────────────────────── */
+.map-view {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   position: relative;
 }
 
-@media (min-width: 861px) {
+.palworld-map-viewport {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+/* ── Sidebar ───────────────────────────────────────────────────────────── */
+.map-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 22rem;
+  flex-shrink: 0;
+  height: 100%;
+  background: rgba(15, 18, 32, 0.97);
+  border-right: 1px solid #2a2a3e;
+  overflow: hidden;
+  transform: translateX(-100%);
+  transition: transform 0.2s ease;
+  position: absolute;
+  top: 0; left: 0;
+  z-index: 100;
+}
+
+@media (min-width: 1024px) {
   .map-sidebar {
-    grid-row: 1;
-    grid-column: 1;
+    position: relative;
+    transform: none;
   }
-
-  .map-stage {
-    grid-row: 1;
-    grid-column: 1 / -1;
+  .map-sidebar--open {
+    transform: none;
   }
 }
 
-.coordinate-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 38px;
-  gap: 6px;
+.map-sidebar--open {
+  transform: translateX(0);
 }
 
-.map-selector {
+.map-sidebar__header {
+  flex-shrink: 0;
+  border-bottom: 1px solid #2a2a3e;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(15, 18, 32, 0.99);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.map-sidebar__zone-btns {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
-  padding: 8px 10px 4px;
 }
 
-.map-btn {
+.zone-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 6px;
-  padding: 7px 10px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #3c3c4d;
   background: transparent;
-  color: var(--muted);
-  font-size: 0.8rem;
+  color: #7777aa;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
-  transition:
-    background 0.15s,
-    color 0.15s,
-    border-color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
-.map-btn:hover {
-  background: var(--panel);
-  color: var(--text);
-}
-
-.map-btn.active {
+.zone-btn:hover { background: #1e1e30; color: #ccccee; }
+.zone-btn--active {
   background: linear-gradient(135deg, #0ea5e9, #4f46e5);
   border-color: transparent;
   color: #fff;
-  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.24);
 }
 
-.quick-actions {
+.map-sidebar__actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.action-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #3c3c4d;
+  background: #1a1a2e;
+  color: #ccccee;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.action-btn:hover { background: #252535; }
+.action-btn--secondary { background: transparent; color: #7777aa; }
+.action-btn--secondary:hover { color: #ccccee; background: #1a1a2e; }
+.action-btn--icon {
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.action-btn--icon:last-child { margin-left: auto; }
+
+.map-sidebar__scroll {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3c3c4d transparent;
+  padding: 8px 0;
+}
+
+.map-sidebar__search {
+  padding: 0 10px 6px;
+}
+
+.map-search-input {
+  width: 100%;
+  background: #1a1a2e;
+  border: 1px solid #3c3c4d;
+  border-radius: 8px;
+  color: #ccccee;
+  font-size: 12px;
+  padding: 6px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.map-search-input:focus { border-color: #6c5ce7; }
+.map-search-input::placeholder { color: #4444660; }
+
+.map-sidebar__status {
+  padding: 16px;
+  text-align: center;
+  color: #7777aa;
+  font-size: 12px;
+}
+.map-sidebar__status--error { color: #f87171; }
+
+/* ── Filter groups ─────────────────────────────────────────────────────── */
+.filter-group {
+  border-bottom: 1px solid #1e1e2e;
+}
+
+.filter-group__header {
+  display: flex;
+  align-items: center;
+  padding: 0 4px 0 10px;
+}
+
+.filter-group__toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  background: none;
+  border: none;
+  color: #9999bb;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  cursor: pointer;
+  transition: color 0.15s;
+  text-align: left;
+}
+.filter-group__toggle:hover { color: #e0e0f0; }
+
+.filter-group__chevron {
+  transition: transform 0.15s;
+  flex-shrink: 0;
+  color: #5555770;
+}
+.filter-group__chevron--open { transform: rotate(180deg); }
+
+.filter-group__count {
+  margin-left: auto;
+  color: #5555770;
+  font-weight: 500;
+  font-size: 9px;
+}
+
+.filter-group__all-btn {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: none;
+  background: #1e1e30;
+  color: #8888aa;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+  margin-right: 6px;
+}
+.filter-group__all-btn:hover { background: #2a2a40; color: #ccccee; }
+
+.filter-group__list {
+  list-style: none;
+  margin: 0;
+  padding: 2px 6px 6px;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 5px;
-  margin: 5px 0;
+  gap: 3px;
 }
 
-.category-accordions,
-.layer-browser,
-.display-options {
+.filter-type-btn {
   display: grid;
-  gap: 5px;
-}
-
-.category-section {
-  border: 1px solid transparent;
-  border-radius: 8px;
-}
-
-.category-section[open] {
-  border-color: var(--border);
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-}
-
-.category-section > summary {
-  display: flex;
-  min-height: 34px;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 9px;
-  color: var(--text);
-  list-style: none;
-  text-align: left;
-  cursor: pointer;
-}
-
-.category-section > summary::-webkit-details-marker {
-  display: none;
-}
-
-.category-section > summary::after {
-  content: '›';
-  font-size: 1.15rem;
-  line-height: 1;
-  transition: transform 140ms;
-}
-
-.category-section[open] > summary::after {
-  transform: rotate(90deg);
-}
-
-.category-section > summary:hover {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
-.category-section .layer-browser {
-  padding: 0 5px 6px;
-}
-
-.layer-check {
-  display: flex;
-  min-height: 34px;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 5px;
-  color: var(--text);
-  font-size: 0.8rem;
-}
-
-.layer-image {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-}
-
-.layer-label {
-  min-width: 0;
-}
-
-.search-meta {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
-.search-results {
-  display: grid;
   gap: 4px;
-  max-height: min(52vh, 420px);
-  overflow: auto;
-  padding-right: 2px;
-}
-
-.search-result {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 8px;
-  align-items: center;
-  padding: 6px 8px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  cursor: default;
-}
-
-.search-result.active {
-  outline: 1px solid rgba(120, 180, 255, 0.45);
-  background: rgba(80, 140, 220, 0.12);
-}
-
-.search-result.done {
-  opacity: 0.62;
-}
-
-.search-result-main {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 8px;
-  align-items: center;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
+  width: 100%;
+  padding: 5px 7px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: #1a1a2e;
+  color: #7777aa;
+  font-size: 10px;
+  font-weight: 700;
   cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  text-align: left;
+  line-height: 1.2;
+}
+.filter-type-btn--active {
+  background: #1e1e2e;
+  border-color: #3c3c4d;
+  color: #ccccee;
+}
+.filter-type-btn--inactive {
+  opacity: 0.5;
+}
+.filter-type-btn:hover {
+  background: #252538;
+  border-color: #4a4a5e;
+  color: #e0e0f0;
+  opacity: 1;
 }
 
-.search-result-text {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.search-result-label {
+.filter-type-btn__label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.82rem;
 }
 
-.search-result-text small {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
+.filter-type-btn__count {
+  color: #5555770;
+  font-size: 9px;
+  flex-shrink: 0;
 }
 
-.search-empty {
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.layer-count {
-  min-width: 2ch;
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.layer-swatch {
-  flex: 0 0 8px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.slider-field {
-  display: grid;
-  grid-template-columns: 110px 1fr;
+/* ── Size slider ───────────────────────────────────────────────────────── */
+.map-sidebar__size-row {
+  display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 32px;
-  color: var(--muted);
-  font-size: 0.76rem;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid #1e1e2e;
 }
 
-.tool-actions {
+.map-sidebar__size-row .palworld-map-range {
+  flex: 1;
+}
+
+/* ── Tools panel ───────────────────────────────────────────────────────── */
+.tools-panel {
+  border-top: 1px solid #1e1e2e;
+  font-size: 11px;
+}
+
+.tools-panel > summary {
+  padding: 8px 12px;
+  color: #9999bb;
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tools-panel > summary::-webkit-details-marker { display: none; }
+
+.tools-panel__body {
+  padding: 4px 10px 10px;
   display: grid;
   gap: 6px;
 }
 
-.mouse-loop-row {
+.tools-row {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 6px;
   align-items: center;
 }
 
-.mouse-loop-row :deep(.p-inputnumber) {
+.coords-input {
+  background: #1a1a2e;
+  border: 1px solid #3c3c4d;
+  border-radius: 6px;
+  color: #ccccee;
+  font-size: 11px;
+  padding: 5px 8px;
+  outline: none;
   width: 100%;
+  transition: border-color 0.15s;
 }
+.coords-input:focus { border-color: #6c5ce7; }
 
-.tool-actions :deep(.mouse-loop-input) {
-  width: 100%;
-  font-variant-numeric: tabular-nums;
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid #3c3c4d;
+  background: #1a1a2e;
+  color: #8888aa;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
 }
+.icon-btn:hover { background: #252538; color: #ccccee; }
+.icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.icon-btn--danger { color: #f87171; border-color: rgba(248,113,113,0.3); }
+.icon-btn--danger:hover { background: rgba(248,113,113,0.15); }
 
-.mouse-loop-status {
-  color: var(--muted);
-  font-size: 0.72rem;
-  line-height: 1.3;
-}
-
-.mark-in-game-section {
-  display: grid;
-  gap: 5px;
-  padding-top: 4px;
-  border-top: 1px solid var(--border);
-}
-
-.selection-count {
+.primary-btn {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
-.clear-selection {
-  padding: 0 3px;
-  border: 0;
-  color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1;
-  background: transparent;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(108, 92, 231, 0.8);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
   cursor: pointer;
+  transition: background 0.15s;
 }
+.primary-btn:hover { background: #6c5ce7; }
+.primary-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.clear-selection:hover {
-  color: var(--text);
-}
-
-.game-marker-progress {
-  display: grid;
-  gap: 3px;
-  color: var(--text);
-  font-size: 0.68rem;
-}
-
-.game-marker-hint {
-  max-width: 215px;
-  color: var(--muted);
-  font-size: 0.65rem;
-  line-height: 1.25;
-}
-
-.server-status {
+.tools-status {
+  font-size: 10px;
+  color: #8888aa;
   display: flex;
   align-items: center;
-  gap: 7px;
-}
-
-.map-stage {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.map-status {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 5;
-  max-width: min(440px, calc(100% - 24px));
-  padding: 4px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.9);
-  font-family: Consolas, 'Courier New', monospace;
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  background: rgba(2, 6, 23, 0.72);
-  backdrop-filter: blur(10px);
-  pointer-events: none;
-}
-
-@media (min-width: 861px) {
-  .map-status {
-    left: calc(var(--sidebar-width, 320px) + 12px);
-    max-width: min(440px, calc(100% - var(--sidebar-width, 320px) - 24px));
-  }
-}
-
-:global(.app-shell.sidebar-collapsed) .map-status {
-  left: 46px;
-  max-width: min(440px, calc(100% - 58px));
-}
-
-.marker-popup {
-  position: absolute;
-  z-index: 20;
-  display: grid;
-  width: max-content;
-  max-width: min(240px, calc(100vw - 24px));
-  gap: 2px;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--text);
-  background: color-mix(in srgb, var(--panel-solid) 92%, transparent);
-  box-shadow: 0 12px 32px rgba(2, 6, 23, 0.38);
-  backdrop-filter: blur(14px);
-}
-
-.popup-close {
-  position: absolute;
-  top: 2px;
-  right: 5px;
-  border: 0;
-  color: var(--muted);
-  font-size: 1rem;
-  background: transparent;
-  cursor: pointer;
-}
-
-.marker-popup strong {
-  padding-right: 12px;
-  font-size: 0.82rem;
-  line-height: 1.2;
-}
-
-.popup-type,
-.marker-popup small {
-  color: var(--muted);
-  font-size: 0.65rem;
-}
-
-.popup-actions {
-  display: flex;
-  flex-wrap: wrap;
+  justify-content: space-between;
   gap: 4px;
-  margin-top: 5px;
 }
 
-.marker-popup :deep(.p-button) {
-  min-height: 24px;
-  padding: 0.18rem 0.35rem;
-  font-size: 0.62rem;
-  line-height: 1;
+.link-btn {
+  background: none;
+  border: none;
+  color: #f87171;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
 }
 
-.marker-popup :deep(.p-button-icon) {
-  font-size: 0.62rem;
+/* ── Footer ────────────────────────────────────────────────────────────── */
+.map-sidebar__footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid #1e1e2e;
+  font-size: 10px;
+  color: #6666aa;
 }
 
-@media (max-width: 860px) {
-  .marker-popup {
-    position: fixed;
-    right: 12px;
-    bottom: 12px;
-    left: auto !important;
-    top: auto !important;
-    width: max-content;
-    max-width: calc(100vw - 24px);
+.server-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #ef4444;
+  flex-shrink: 0;
+}
+.server-dot--online { background: #22c55e; }
+
+.map-sidebar__footer-count {
+  margin-left: auto;
+  font-weight: 700;
+  color: #5555770;
+}
+
+/* ── Show sidebar btn (mobile/collapsed) ────────────────────────────────── */
+.sidebar-show-btn {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #3c3c4d;
+  background: rgba(20, 20, 40, 0.92);
+  color: #ccccee;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 0.15s;
+}
+.sidebar-show-btn:hover { background: rgba(108, 92, 231, 0.3); border-color: #6c5ce7; }
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (min-width: 1024px) {
+  .map-sidebar {
+    position: relative;
+    transform: none;
+    width: 22rem;
   }
+  .sidebar-show-btn { display: none; }
+}
+
+@media (max-width: 1023px) {
+  .map-sidebar--open {
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
+  }
+}
+
+@media (min-width: 1280px) {
+  .map-sidebar { width: 24rem; }
 }
 </style>
