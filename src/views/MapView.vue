@@ -10,8 +10,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import LeafletMapView from '@/components/map/LeafletMapView.vue'
 import { useOpggMapStore } from '@/stores/opggMap'
 import { useServerHudStore } from '@/stores/serverHud'
+import { getFilterIconUrl } from '@/domain/opggMarkerIcons'
 import { formatIngameCoords, toGamePoint, toLatLng, getMapWindow } from '@/domain/opggCoordinates'
-import { markerDisplayName, markerTypeLabel, GROUPS, GROUP_LABELS } from '@/types/opggMarker'
+import { markerDisplayName, markerFilterLabel, GROUPS, GROUP_LABELS } from '@/types/opggMarker'
 import type { BatchQueueItem } from '@/types/batch'
 import type { Marker } from '@/types/opggMarker'
 import type { MapZone } from '@/stores/opggMap'
@@ -60,6 +61,12 @@ const markerSizeSliderStyle = computed(() => ({
   '--range-progress': `${mapStore.markerSize}%`,
 }))
 
+const allMarkersVisible = computed(() => mapStore.visibleTypes.size === 0)
+
+function toggleAllMarkers(): void {
+  mapStore.setAllVisible(!allMarkersVisible.value)
+}
+
 // Visible types for a group: true if at least one type in this group is visible
 function isGroupPartiallyVisible(group: string): boolean {
   const types = mapStore.typesByGroup[group] ?? []
@@ -69,6 +76,11 @@ function isGroupPartiallyVisible(group: string): boolean {
 
 function isTypeActive(type: string): boolean {
   return !mapStore.visibleTypes.has(type)
+}
+
+function filterIconStyle(filterKey: string): Record<string, string> {
+  const iconUrl = getFilterIconUrl(filterKey)
+  return iconUrl ? { backgroundImage: `url('${iconUrl}')` } : {}
 }
 
 // ── Zone switch ───────────────────────────────────────────────────────────
@@ -164,16 +176,31 @@ async function markInGame() {
 
 // ── Mark queue (lote) ─────────────────────────────────────────────────────
 const batchActionCount = computed(() => server.pendingBatchCount + mapStore.selectionCount)
+const useQueueAction = computed(() => mapStore.selectionCount > 1 || server.pendingBatchCount > 0)
 
-const batchButtonText = computed(() => {
+const markButtonText = computed(() => {
   if (server.batchRunning) {
     const current = Math.min(server.batchCurrentIndex + 1, server.batchTotal)
     return `Processing ${current} of ${server.batchTotal}…`
   }
-  return batchActionCount.value > 0
-    ? `Mark all in game (${batchActionCount.value})`
-    : 'Mark all in game'
+  if (useQueueAction.value) return `Mark queue (${batchActionCount.value})`
+  return 'Mark in game'
 })
+
+const markButtonDisabled = computed(() => {
+  if (useQueueAction.value) {
+    return server.batchRunning || markInGameRunning.value || server.gameMarkerBusy
+  }
+  return !mapStore.selectedMarker || markInGameRunning.value || server.gameMarkerBusy
+})
+
+async function runMarkAction(): Promise<void> {
+  if (useQueueAction.value) {
+    await markAllInGame()
+  } else {
+    await markInGame()
+  }
+}
 
 async function markAllInGame() {
   if (server.batchRunning || markInGameRunning.value) return
@@ -288,7 +315,9 @@ async function toggleMouseLoop() {
 
         <!-- Action buttons -->
         <div class="map-sidebar__actions">
-          <button type="button" class="action-btn" @click="mapStore.setAllVisible(true)">All</button>
+          <button type="button" class="action-btn" @click="toggleAllMarkers">
+            {{ allMarkersVisible ? 'Hide' : 'All' }}
+          </button>
           <button type="button" class="action-btn action-btn--secondary" @click="mapStore.resetFilters()">Reset</button>
           <button type="button" class="action-btn action-btn--icon" title="Collapse all groups"
                   @click="mapStore.collapseAllGroups()">
@@ -350,8 +379,8 @@ async function toggleMouseLoop() {
                   <path d="m6 9 6 6 6-6"/>
                 </svg>
                 {{ GROUP_LABELS[group] }}
-                <span class="filter-group__count">
-                  {{ mapStore.countsByType[group] ?? Object.entries(mapStore.countsByType).filter(([k]) => (mapStore.typesByGroup[group] ?? []).includes(k)).reduce((s, [, v]) => s + v, 0) }}
+                <span class="filter-group__progress">
+                  {{ mapStore.groupProgress[group]?.checked ?? 0 }}/{{ mapStore.groupProgress[group]?.total ?? 0 }}
                 </span>
               </button>
               <button
@@ -379,11 +408,9 @@ async function toggleMouseLoop() {
                   :aria-pressed="isTypeActive(type)"
                   @click="mapStore.toggleType(type)"
                 >
-                  <span class="filter-type-btn__icon" v-if="true">
-                    <!-- Icon slot: inline background-image -->
-                  </span>
+                  <span class="filter-type-btn__icon" :style="filterIconStyle(type)" aria-hidden="true" />
                   <span class="filter-type-btn__label">
-                    {{ markerTypeLabel(type) }}
+                    {{ markerFilterLabel(type) }}
                   </span>
                   <span class="filter-type-btn__count">
                     {{ mapStore.countsByType[type] ?? 0 }}
@@ -470,8 +497,8 @@ async function toggleMouseLoop() {
               </button>
             </div>
 
-            <!-- Mark in game -->
-            <div class="tools-section-label">Mark in game</div>
+            <!-- Mark selected marker(s) in game -->
+            <div class="tools-section-label">{{ markButtonText }}</div>
             <div class="tools-row">
               <span class="coords-display">
                 <template v-if="mapStore.selectedMarker">
@@ -501,14 +528,14 @@ async function toggleMouseLoop() {
                 class="primary-btn"
                 style="width:100%"
                 type="button"
-                :disabled="!mapStore.selectedMarker || markInGameRunning || server.gameMarkerBusy"
-                @click="markInGame"
+                :disabled="markButtonDisabled"
+                @click="runMarkAction"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
                      fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <polygon points="6 3 20 12 6 21 6 3"/>
                 </svg>
-                Mark in game
+                {{ markButtonText }}
               </button>
             </div>
             <div v-if="server.gameMarkerBusy" class="tools-status">
@@ -516,15 +543,7 @@ async function toggleMouseLoop() {
               <button type="button" class="link-btn" @click="server.cancelGameMarker">Cancel</button>
             </div>
 
-            <!-- Mark queue (batch) -->
-            <div class="tools-section-label">
-              Mark queue <span v-if="server.batchQueue.length">({{ server.batchQueue.length }})</span>
-            </div>
-            <div class="mark-queue">
-              <div v-if="server.batchQueue.length === 0" class="mark-queue__empty">
-                <em>Ctrl + Click markers to queue them</em>
-              </div>
-              <template v-else>
+            <div v-if="server.batchQueue.length || server.batchRunning" class="mark-queue">
                 <ul class="mark-queue__list">
                   <li
                     v-for="item in server.batchQueue"
@@ -554,35 +573,20 @@ async function toggleMouseLoop() {
                     :disabled="server.batchRunning"
                     @click="server.clearBatchQueue()"
                   >Clear queue</button>
+                  <button
+                    v-if="server.batchRunning"
+                    class="icon-btn icon-btn--danger"
+                    type="button"
+                    title="Cancel batch"
+                    aria-label="Cancel batch"
+                    @click="server.cancelBatchMark()"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect width="4" height="16" x="6" y="4"/><rect width="4" height="16" x="14" y="4"/>
+                    </svg>
+                  </button>
                 </div>
-              </template>
-              <div class="mark-queue__actions">
-                <button
-                  class="primary-btn"
-                  type="button"
-                  :disabled="batchActionCount === 0 || server.batchRunning || markInGameRunning || server.gameMarkerBusy"
-                  @click="markAllInGame"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                       fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <polygon points="6 3 20 12 6 21 6 3"/>
-                  </svg>
-                  {{ batchButtonText }}
-                </button>
-                <button
-                  v-if="server.batchRunning"
-                  class="icon-btn icon-btn--danger"
-                  type="button"
-                  title="Cancel batch"
-                  aria-label="Cancel batch"
-                  @click="server.cancelBatchMark()"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                       fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <rect width="4" height="16" x="6" y="4"/><rect width="4" height="16" x="14" y="4"/>
-                  </svg>
-                </button>
-              </div>
             </div>
           </div>
         </details>
@@ -796,9 +800,9 @@ async function toggleMouseLoop() {
   padding: 8px 0;
   background: none;
   border: none;
-  color: #9999bb;
+  color: #e6e6ff;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   cursor: pointer;
@@ -821,14 +825,23 @@ async function toggleMouseLoop() {
   font-size: 9px;
 }
 
+.filter-group__progress {
+  margin-left: 2px;
+  color: #f0f0ff;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
 .filter-group__all-btn {
   padding: 2px 8px;
   border-radius: 999px;
   border: none;
   background: #1e1e30;
-  color: #8888aa;
-  font-size: 9px;
-  font-weight: 700;
+  color: #f0f0ff;
+  font-size: 10px;
+  font-weight: 900;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
   flex-shrink: 0;
@@ -857,11 +870,22 @@ async function toggleMouseLoop() {
   background: #1a1a2e;
   color: #7777aa;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
   text-align: left;
   line-height: 1.2;
+}
+.filter-type-btn__icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background-color: #0f1428;
+  background-size: 75%;
+  background-repeat: no-repeat;
+  background-position: center;
+  border: 1px solid #3c3c4d;
 }
 .filter-type-btn--active {
   background: #1e1e2e;

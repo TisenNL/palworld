@@ -44,6 +44,7 @@ const TYPE_ICONS: Record<string, string> = {
   Incident:         '/opgg-icons/markers/incident.webp',
   FastTravels:      '/opgg-icons/markers/fast-travel.webp',
   WatchTower:       '/opgg-icons/markers/watch-tower.webp',
+  Dungeon:          '/opgg-icons/markers/dungeon.webp',
   LootTower:        '/opgg-icons/markers/loot-tower.webp',
   Note:             '/opgg-icons/markers/note.webp',
   SkillFruits:      '/opgg-icons/markers/skill-fruit.webp',
@@ -54,6 +55,30 @@ const TYPE_ICONS: Record<string, string> = {
   Junk:             '/opgg-icons/markers/junk.webp',
   WorldTreeOre:     '/opgg-icons/markers/world-tree-ore.webp',
   Quest:            '/opgg-icons/markers/quest.webp',
+  CaveEntrance:     '/opgg-icons/markers/cave-entrance.webp',
+  CrudeOil:         '/opgg-icons/markers/crude-oil.webp',
+  Home:             '/opgg-icons/markers/home.webp',
+  NightStone:       '/opgg-icons/markers/night-stone.webp',
+  OreCoal:          '/opgg-icons/markers/ore-coal.webp',
+  OreMetal:         '/opgg-icons/markers/ore-metal.webp',
+  OreQuartz:        '/opgg-icons/markers/ore-quartz.webp',
+  OreQuartzCluster: '/opgg-icons/markers/ore-quartz.webp',
+  OreSulfur:        '/opgg-icons/markers/ore-sulfur.webp',
+  Peach:            '/opgg-icons/markers/peach.webp',
+  RainbowCrystal:   '/opgg-icons/markers/rainbow-crystal.webp',
+  Respawn:          '/opgg-icons/markers/respawn.webp',
+  SkyIslandOre:     '/opgg-icons/markers/sky-island-ore.webp',
+  SkylandWarpAltar: '/opgg-icons/markers/skyland-warp-altar.webp',
+  Supply:           '/opgg-icons/markers/supply.webp',
+  TreasureMap:      '/opgg-icons/markers/treasure-map.webp',
+  Chromites:        '/opgg-icons/markers/chromite.webp',
+  ElementTreasure:  '/opgg-icons/markers/element-chest.webp',
+  AncientBeastBone: '/opgg-icons/markers/world-tree-ore.webp',
+  AncientLava:      '/opgg-icons/markers/crude-oil.webp',
+  AncientWood:      '/opgg-icons/resources/hardwood.webp',
+  BeautifulFlower:  '/opgg-icons/markers/skill-fruit.webp',
+  HeatArea:         '/opgg-icons/markers/incident.webp',
+  RegionName:       '/opgg-icons/markers/note.webp',
   NpcSalesPerson:   '/opgg-icons/resources/human.webp',
   NpcPalDealer:     '/opgg-icons/resources/human.webp',
   NpcDarkTrader:    '/opgg-icons/resources/human.webp',
@@ -74,6 +99,15 @@ export function getMarkerIconUrl(marker: Marker): string {
     return EGG_ICONS[marker.subtype] ?? '/opgg-icons/eggs/grass.webp'
   }
   return TYPE_ICONS[marker.type] ?? ''
+}
+
+export function getFilterIconUrl(filterKey: string): string {
+  const [type, scope] = filterKey.split(':', 2)
+  return getMarkerIconUrl({
+    type,
+    group: '',
+    subtype: type === 'LifmunkEffigy' || type === 'Eggs' ? scope : undefined,
+  } as Marker)
 }
 
 // ── Ring / border colors by group ─────────────────────────────────────────

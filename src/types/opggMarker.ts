@@ -170,6 +170,28 @@ export function markerTypeLabel(type: string, subtype?: string | null): string {
   return typeLabels[type] ?? type
 }
 
+export function markerFilterKey(marker: Pick<Marker, 'type' | 'group' | 'subtype'>): string {
+  if (marker.type === 'LifmunkEffigy' || marker.type === 'Eggs') {
+    return `${marker.type}:${marker.subtype ?? ''}`
+  }
+  if (marker.type === 'Chestbox') {
+    const oilRigKind = marker.group === 'oilrig' && marker.subtype === 'oilrigMiniGoal' ? 'goal' : 'chest'
+    return `${marker.type}:${marker.group}:${oilRigKind}`
+  }
+  return marker.type
+}
+
+export function markerFilterLabel(key: string): string {
+  const [type, scope, subtype] = key.split(':', 3)
+  if (type === 'Chestbox') {
+    if (scope === 'oilrig' && subtype === 'goal') return 'Oil Rig Goal'
+    if (scope === 'oilrig') return 'Oil Rig Chest'
+    return 'Chest'
+  }
+  const resolvedSubtype = type === 'LifmunkEffigy' || type === 'Eggs' ? scope : null
+  return markerTypeLabel(type, resolvedSubtype)
+}
+
 /** Returns a display name for a marker, using name/level from extra when available. */
 export function markerDisplayName(marker: Marker): string {
   const extra = marker.extra ?? {}

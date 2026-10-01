@@ -49,6 +49,10 @@ const gotoValue    = ref('')
 
 let mapInstance: L.Map | null = null
 let tileLayer:   L.TileLayer | null = null
+let selectionStart: L.Point | null = null
+let selectionRectangle: L.Rectangle | null = null
+let selectionMoved = false
+let suppressNextMapClick = false
 
 // LayerGroup per marker type for efficient show/hide
 const layerGroups    = new Map<string, L.LayerGroup>()
@@ -121,6 +125,62 @@ function handleWheel(e: WheelEvent) {
   smoothZoomEndTimer = window.setTimeout(() => {
     smoothZoomTarget = null; smoothZoomCenter = null
   }, 400)
+}
+
+function selectionPointFromClientEvent(e: MouseEvent): L.Point | null {
+  const rect = mapContainer.value?.getBoundingClientRect()
+  if (!rect) return null
+  return L.point(e.clientX - rect.left, e.clientY - rect.top)
+}
+
+function updateSelectionRectangle(e: MouseEvent): void {
+  if (!mapInstance || !selectionStart || !selectionRectangle) return
+  const current = selectionPointFromClientEvent(e)
+  if (!current) return
+  selectionMoved = selectionMoved || selectionStart.distanceTo(current) >= 4
+  selectionRectangle.setBounds([
+    mapInstance.containerPointToLatLng(selectionStart),
+    mapInstance.containerPointToLatLng(current),
+  ])
+  e.preventDefault()
+}
+
+function finishSelectionRectangle(): void {
+  if (!mapInstance || !selectionStart) return
+  const bounds = selectionRectangle?.getBounds()
+  const wasDragged = selectionMoved
+
+  window.removeEventListener('mousemove', updateSelectionRectangle)
+  window.removeEventListener('mouseup', finishSelectionRectangle)
+  mapInstance.dragging.enable()
+  selectionRectangle?.remove()
+  selectionRectangle = null
+  selectionStart = null
+  selectionMoved = false
+
+  if (!wasDragged || !bounds) return
+  suppressNextMapClick = true
+  for (const marker of filteredMarkersById.values()) {
+    if (!bounds.contains([marker.lat, marker.lng])) continue
+    if (!mapStore.selectedMarkerIds.has(marker.id)) {
+      mapStore.toggleBatchSelection(marker)
+    }
+  }
+}
+
+function handleMapMouseDown(e: L.LeafletMouseEvent): void {
+  const originalEvent = e.originalEvent
+  if (originalEvent.button !== 0 || !originalEvent.ctrlKey || !mapInstance) return
+
+  selectionStart = mapInstance.mouseEventToContainerPoint(originalEvent)
+  selectionMoved = false
+  selectionRectangle = L.rectangle(
+    [e.latlng, e.latlng],
+    { color: '#8b7cf6', weight: 1, fillColor: '#8b7cf6', fillOpacity: 0.14, interactive: false },
+  ).addTo(mapInstance)
+  mapInstance.dragging.disable()
+  window.addEventListener('mousemove', updateSelectionRectangle)
+  window.addEventListener('mouseup', finishSelectionRectangle)
 }
 
 // ── Marker rendering helpers ──────────────────────────────────────────────
@@ -307,6 +367,7 @@ function initMap() {
   }).addTo(mapInstance)
 
   el.addEventListener('wheel', handleWheel, { passive: false })
+  mapInstance.on('mousedown', handleMapMouseDown)
 
   mapInstance.on('mousemove', (e: L.LeafletMouseEvent) => {
     const { ingameX, ingameY } = latLngToIngame(e.latlng.lat, e.latlng.lng, props.mapZone)
@@ -316,6 +377,10 @@ function initMap() {
   })
 
   mapInstance.on('click', () => {
+    if (suppressNextMapClick) {
+      suppressNextMapClick = false
+      return
+    }
     popupVisible.value = false
     mapStore.selectMarker(null)
     mapStore.clearBatchSelection()
@@ -462,6 +527,11 @@ onBeforeUnmount(() => {
   cancelSmoothZoom()
   clearTimeout(sizeDebounceTimer)
   mapContainer.value?.removeEventListener('wheel', handleWheel)
+  window.removeEventListener('mousemove', updateSelectionRectangle)
+  window.removeEventListener('mouseup', finishSelectionRectangle)
+  selectionRectangle?.remove()
+  selectionRectangle = null
+  selectionStart = null
   for (const lg of layerGroups.values()) lg.clearLayers()
   layerGroups.clear()
   leafletMarkers.clear()

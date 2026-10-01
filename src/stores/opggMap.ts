@@ -22,6 +22,7 @@ import {
   markerCountsSchema,
   markerDisplayName,
   markerTypeLabel,
+  markerFilterKey,
   GROUPS,
   type Marker,
   type MarkerCounts,
@@ -210,7 +211,7 @@ export const useOpggMapStore = defineStore('opggMap', () => {
   function toggleType(type: string): void {
     if (visibleTypes.size === 0) {
       // All visible → hide all except this one
-      const allTypes = [...new Set(rawMarkers.value.map(m => m.type))]
+      const allTypes = [...new Set(rawMarkers.value.map(markerFilterKey))]
       for (const t of allTypes) {
         if (t !== type) visibleTypes.add(t)
       }
@@ -226,7 +227,7 @@ export const useOpggMapStore = defineStore('opggMap', () => {
   /** Show only one specific type */
   function showOnlyType(type: string): void {
     visibleTypes.clear()
-    const allTypes = [...new Set(rawMarkers.value.map(m => m.type))]
+    const allTypes = [...new Set(rawMarkers.value.map(markerFilterKey))]
     for (const t of allTypes) {
       if (t !== type) visibleTypes.add(t)
     }
@@ -235,7 +236,7 @@ export const useOpggMapStore = defineStore('opggMap', () => {
   /** Toggle all types in a group visible/hidden */
   function setGroupVisible(group: string, visible: boolean): void {
     const typesInGroup = [...new Set(
-      rawMarkers.value.filter(m => m.group === group).map(m => m.type)
+      rawMarkers.value.filter(m => m.group === group).map(markerFilterKey)
     )]
     if (visible) {
       for (const t of typesInGroup) visibleTypes.delete(t)
@@ -248,7 +249,7 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     if (visible) {
       visibleTypes.clear()
     } else {
-      for (const m of rawMarkers.value) visibleTypes.add(m.type)
+      for (const m of rawMarkers.value) visibleTypes.add(markerFilterKey(m))
     }
   }
 
@@ -277,7 +278,7 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     const q = search.value.trim().toLowerCase()
     return rawMarkers.value.filter(m => {
       // Type visibility
-      if (visibleTypes.size > 0 && visibleTypes.has(m.type)) return false
+      if (visibleTypes.size > 0 && visibleTypes.has(markerFilterKey(m))) return false
       // Search
       if (q.length >= 2) {
         const label = markerDisplayName(m).toLowerCase()
@@ -296,18 +297,34 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     const result: Record<string, string[]> = {}
     const seen = new Set<string>()
     for (const m of rawMarkers.value) {
-      if (seen.has(m.type)) continue
-      seen.add(m.type)
+      const key = markerFilterKey(m)
+      if (seen.has(key)) continue
+      seen.add(key)
       if (!result[m.group]) result[m.group] = []
-      result[m.group].push(m.type)
+      result[m.group].push(key)
     }
     return result
   })
 
   /** Count of markers per type in current zone (raw, not filtered) */
   const countsByType = computed<Record<string, number>>(() => {
-    const key = activeZone.value === 'palpagos' ? 'palpagos' : 'worldtree'
-    return counts.value[key] ?? {}
+    const result: Record<string, number> = {}
+    for (const marker of rawMarkers.value) {
+      const key = markerFilterKey(marker)
+      result[key] = (result[key] ?? 0) + 1
+    }
+    return result
+  })
+
+  const groupProgress = computed<Record<string, { checked: number; total: number }>>(() => {
+    const result: Record<string, { checked: number; total: number }> = {}
+    for (const marker of rawMarkers.value) {
+      const progress = result[marker.group] ?? { checked: 0, total: 0 }
+      progress.total++
+      if (checkedMap.has(makeCheckedKey(marker))) progress.checked++
+      result[marker.group] = progress
+    }
+    return result
   })
 
   // ── Checked (progress) ───────────────────────────────────────────────────
@@ -440,6 +457,7 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     selectionCount,
     typesByGroup,
     countsByType,
+    groupProgress,
     totalChecked,
 
     // Helpers (re-exported for convenience in templates)

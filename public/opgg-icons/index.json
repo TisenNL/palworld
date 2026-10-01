@@ -41,5 +41,22 @@
   "markers/salvage": "/opgg-icons/markers/salvage.webp",
   "markers/junk": "/opgg-icons/markers/junk.webp",
   "markers/world-tree-ore": "/opgg-icons/markers/world-tree-ore.webp",
-  "markers/quest": "/opgg-icons/markers/quest.webp"
+  "markers/quest": "/opgg-icons/markers/quest.webp",
+  "markers/cave-entrance": "/opgg-icons/markers/cave-entrance.webp",
+  "markers/crude-oil": "/opgg-icons/markers/crude-oil.webp",
+  "markers/home": "/opgg-icons/markers/home.webp",
+  "markers/night-stone": "/opgg-icons/markers/night-stone.webp",
+  "markers/ore-coal": "/opgg-icons/markers/ore-coal.webp",
+  "markers/ore-metal": "/opgg-icons/markers/ore-metal.webp",
+  "markers/ore-quartz": "/opgg-icons/markers/ore-quartz.webp",
+  "markers/ore-sulfur": "/opgg-icons/markers/ore-sulfur.webp",
+  "markers/peach": "/opgg-icons/markers/peach.webp",
+  "markers/rainbow-crystal": "/opgg-icons/markers/rainbow-crystal.webp",
+  "markers/respawn": "/opgg-icons/markers/respawn.webp",
+  "markers/sky-island-ore": "/opgg-icons/markers/sky-island-ore.webp",
+  "markers/skyland-warp-altar": "/opgg-icons/markers/skyland-warp-altar.webp",
+  "markers/supply": "/opgg-icons/markers/supply.webp",
+  "markers/treasure-map": "/opgg-icons/markers/treasure-map.webp",
+  "markers/chromite": "/opgg-icons/markers/chromite.webp",
+  "markers/element-chest": "/opgg-icons/markers/element-chest.webp"
 }
