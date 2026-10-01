@@ -7,7 +7,6 @@ import {
   isTreePoint,
   formatIngameCoords,
   MAP_WINDOW_PALPAGOS,
-  MAP_WINDOW_WORLD_TREE,
 } from '../src/domain/opggCoordinates'
 
 // Known points from op.gg data (confirmed from points.json inspection)

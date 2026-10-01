@@ -8,13 +8,7 @@
  */
 
 import { defineStore } from 'pinia'
-import {
-  computed,
-  reactive,
-  ref,
-  shallowRef,
-  watch,
-} from 'vue'
+import { computed, reactive, ref, shallowRef } from 'vue'
 import { z } from 'zod'
 
 import {
@@ -27,21 +21,21 @@ import {
   type Marker,
   type MarkerCounts,
   type MapZone,
-  type GroupId,
 } from '@/types/opggMarker'
 import { formatIngameCoords } from '@/domain/opggCoordinates'
 
 // ── localStorage keys (same as op.gg) ────────────────────────────────────────
 
 const CHECKED_KEY = 'palworld:map:checked-collectibles'
-const CAMERA_KEY  = 'palworld:map:camera'
+const DISTINCT_CHECKED_KEY = 'palworld:map:checked-collectibles:distinct'
+const CAMERA_KEY = 'palworld:map:camera'
 
 // ── Checked item format (op.gg localStorage format) ──────────────────────────
 
 interface CheckedItem {
-  key: string   // 'effigy:{lat}:{lng}' or 'collectible:{type}:{lat}:{lng}'
-  x: number     // lat (Leaflet)
-  y: number     // lng (Leaflet)
+  key: string // 'effigy:{lat}:{lng}' or 'collectible:{type}:{lat}:{lng}'
+  x: number // lat (Leaflet)
+  y: number // lng (Leaflet)
 }
 
 function makeCheckedKey(marker: Marker): string {
@@ -49,6 +43,30 @@ function makeCheckedKey(marker: Marker): string {
     return `effigy:${marker.lat}:${marker.lng}`
   }
   return `collectible:${marker.type}:${marker.lat}:${marker.lng}`
+}
+
+let checkedKeyIndexSource: Marker[] | null = null
+let checkedKeyByMarkerId = new Map<string, string>()
+let collisionMarkerIds = new Set<string>()
+
+function checkedKeyFor(marker: Marker, markers: Marker[]): string {
+  if (checkedKeyIndexSource !== markers) {
+    const seen = new Set<string>()
+    checkedKeyByMarkerId = new Map()
+    collisionMarkerIds = new Set()
+    for (const item of markers) {
+      const baseKey = makeCheckedKey(item)
+      if (seen.has(baseKey)) {
+        checkedKeyByMarkerId.set(item.id, `${baseKey}#${encodeURIComponent(item.id)}`)
+        collisionMarkerIds.add(item.id)
+      } else {
+        seen.add(baseKey)
+        checkedKeyByMarkerId.set(item.id, baseKey)
+      }
+    }
+    checkedKeyIndexSource = markers
+  }
+  return checkedKeyByMarkerId.get(marker.id) ?? makeCheckedKey(marker)
 }
 
 // ── Camera state ──────────────────────────────────────────────────────────────
@@ -64,12 +82,14 @@ function loadCameraState(): MapCameraState | null {
   try {
     const raw = localStorage.getItem(CAMERA_KEY)
     if (!raw) return null
-    return z.object({
-      lat:  z.number(),
-      lng:  z.number(),
-      zoom: z.number(),
-      zone: z.enum(['palpagos', 'world-tree']),
-    }).parse(JSON.parse(raw))
+    return z
+      .object({
+        lat: z.number(),
+        lng: z.number(),
+        zoom: z.number(),
+        zone: z.enum(['palpagos', 'world-tree']),
+      })
+      .parse(JSON.parse(raw))
   } catch {
     return null
   }
@@ -78,22 +98,35 @@ function loadCameraState(): MapCameraState | null {
 function saveCameraState(state: MapCameraState): void {
   try {
     localStorage.setItem(CAMERA_KEY, JSON.stringify(state))
-  } catch {}
+  } catch {
+    // storage cheio/bloqueado — a câmera é dispensável
+  }
 }
 
 // ── Checked persistence ───────────────────────────────────────────────────────
 
-function loadChecked(): Map<string, CheckedItem> {
+/** Normaliza um item do formato on-disk do op.gg para o tipo do app. */
+function toCheckedItem(value: unknown): CheckedItem | null {
+  if (typeof value !== 'object' || value === null) return null
+  const record = value as Record<string, unknown>
+  if (typeof record.key !== 'string') return null
+  return {
+    key: record.key,
+    x: typeof record.x === 'number' ? record.x : 0,
+    y: typeof record.y === 'number' ? record.y : 0,
+  }
+}
+
+function loadChecked(storageKey: string): Map<string, CheckedItem> {
   try {
-    const raw = localStorage.getItem(CHECKED_KEY)
+    const raw = localStorage.getItem(storageKey)
     if (!raw) return new Map()
-    const items = JSON.parse(raw)
+    const items: unknown = JSON.parse(raw)
     if (!Array.isArray(items)) return new Map()
     const map = new Map<string, CheckedItem>()
-    for (const item of items) {
-      if (item && typeof item.key === 'string') {
-        map.set(item.key, item as CheckedItem)
-      }
+    for (const item of items as unknown[]) {
+      const checkedItem = toCheckedItem(item)
+      if (checkedItem) map.set(checkedItem.key, checkedItem)
     }
     return map
   } catch {
@@ -101,10 +134,12 @@ function loadChecked(): Map<string, CheckedItem> {
   }
 }
 
-function persistChecked(checkedMap: Map<string, CheckedItem>): void {
+function persistChecked(storageKey: string, checkedMap: Map<string, CheckedItem>): void {
   try {
-    localStorage.setItem(CHECKED_KEY, JSON.stringify([...checkedMap.values()]))
-  } catch {}
+    localStorage.setItem(storageKey, JSON.stringify([...checkedMap.values()]))
+  } catch {
+    // storage cheio/bloqueado — o progresso fica só em memória nesta sessão
+  }
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -122,8 +157,8 @@ export const useOpggMapStore = defineStore('opggMap', () => {
   const counts = ref<MarkerCounts>({ palpagos: {}, worldtree: {} })
 
   /** Loading/error state */
-  const loading  = ref(false)
-  const error    = ref('')
+  const loading = ref(false)
+  const error = ref('')
 
   /** Set of currently visible types (key = type string, empty = all visible) */
   const visibleTypes = reactive(new Set<string>())
@@ -151,7 +186,8 @@ export const useOpggMapStore = defineStore('opggMap', () => {
   const cameraState = ref<MapCameraState | null>(loadCameraState())
 
   /** Checked items map: key → CheckedItem */
-  const checkedMap = reactive(loadChecked())
+  const checkedMap = reactive(loadChecked(CHECKED_KEY))
+  const distinctCheckedMap = reactive(loadChecked(DISTINCT_CHECKED_KEY))
 
   // ── Load data ────────────────────────────────────────────────────────────
 
@@ -159,19 +195,16 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     loading.value = true
     error.value = ''
     try {
-      const fileName = zone === 'palpagos'
-        ? '/opgg-markers-palpagos.json'
-        : '/opgg-markers-worldtree.json'
+      const fileName =
+        zone === 'palpagos' ? '/opgg-markers-palpagos.json' : '/opgg-markers-worldtree.json'
       // Fix 3 — allow the browser to cache the file (3.38 MB); subsequent
       // loads are instant without any network round-trip.
       const resp = await fetch(fileName)
       if (!resp.ok) throw new Error(`Failed to load ${fileName}: HTTP ${resp.status}`)
-      const json = await resp.json()
+      const json: unknown = await resp.json()
       // Fix 4 — full Zod validation only in dev; in production the JSON is
       // generated by our own script so a direct cast is safe and fast.
-      rawMarkers.value = import.meta.env.DEV
-        ? markersSchema.parse(json)
-        : (json as Marker[])
+      rawMarkers.value = import.meta.env.DEV ? markersSchema.parse(json) : (json as Marker[])
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load markers'
       rawMarkers.value = []
@@ -185,7 +218,9 @@ export const useOpggMapStore = defineStore('opggMap', () => {
       const resp = await fetch('/opgg-marker-counts.json')
       if (!resp.ok) return
       counts.value = markerCountsSchema.parse(await resp.json())
-    } catch {}
+    } catch {
+      // contagens são um acessório — o mapa funciona sem elas
+    }
   }
 
   /** Initialize: load counts + active zone markers */
@@ -204,24 +239,15 @@ export const useOpggMapStore = defineStore('opggMap', () => {
 
   // ── Visibility filters ───────────────────────────────────────────────────
 
+  /** `visibleTypes` guarda os tipos **ocultos** (vazio = tudo visível). */
   function isTypeVisible(type: string): boolean {
-    return visibleTypes.size === 0 || visibleTypes.has(type)
+    return !visibleTypes.has(type)
   }
 
+  /** Alterna a visibilidade de um tipo (o set guarda os **ocultos**). */
   function toggleType(type: string): void {
-    if (visibleTypes.size === 0) {
-      // All visible → hide all except this one
-      const allTypes = [...new Set(rawMarkers.value.map(markerFilterKey))]
-      for (const t of allTypes) {
-        if (t !== type) visibleTypes.add(t)
-      }
-    } else if (visibleTypes.has(type)) {
-      visibleTypes.delete(type)
-      // If nothing hidden now, treat as all-visible
-      if (visibleTypes.size === 0) visibleTypes.clear()
-    } else {
-      visibleTypes.delete(type)
-    }
+    if (visibleTypes.has(type)) visibleTypes.delete(type)
+    else visibleTypes.add(type)
   }
 
   /** Show only one specific type */
@@ -235,9 +261,9 @@ export const useOpggMapStore = defineStore('opggMap', () => {
 
   /** Toggle all types in a group visible/hidden */
   function setGroupVisible(group: string, visible: boolean): void {
-    const typesInGroup = [...new Set(
-      rawMarkers.value.filter(m => m.group === group).map(markerFilterKey)
-    )]
+    const typesInGroup = [
+      ...new Set(rawMarkers.value.filter((m) => m.group === group).map(markerFilterKey)),
+    ]
     if (visible) {
       for (const t of typesInGroup) visibleTypes.delete(t)
     } else {
@@ -276,13 +302,13 @@ export const useOpggMapStore = defineStore('opggMap', () => {
 
   const filteredMarkers = computed<Marker[]>(() => {
     const q = search.value.trim().toLowerCase()
-    return rawMarkers.value.filter(m => {
+    return rawMarkers.value.filter((m) => {
       // Type visibility
       if (visibleTypes.size > 0 && visibleTypes.has(markerFilterKey(m))) return false
       // Search
       if (q.length >= 2) {
         const label = markerDisplayName(m).toLowerCase()
-        const type  = markerTypeLabel(m.type, m.subtype ?? null).toLowerCase()
+        const type = markerTypeLabel(m.type, m.subtype ?? null).toLowerCase()
         const coords = `${m.ingameX} ${m.ingameY}`
         if (!label.includes(q) && !type.includes(q) && !coords.includes(q)) return false
       }
@@ -300,8 +326,8 @@ export const useOpggMapStore = defineStore('opggMap', () => {
       const key = markerFilterKey(m)
       if (seen.has(key)) continue
       seen.add(key)
-      if (!result[m.group]) result[m.group] = []
-      result[m.group].push(key)
+      const bucket = (result[m.group] ||= [])
+      bucket.push(key)
     }
     return result
   })
@@ -321,7 +347,7 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     for (const marker of rawMarkers.value) {
       const progress = result[marker.group] ?? { checked: 0, total: 0 }
       progress.total++
-      if (checkedMap.has(makeCheckedKey(marker))) progress.checked++
+      if (isChecked(marker)) progress.checked++
       result[marker.group] = progress
     }
     return result
@@ -330,34 +356,41 @@ export const useOpggMapStore = defineStore('opggMap', () => {
   // ── Checked (progress) ───────────────────────────────────────────────────
 
   function isChecked(marker: Marker): boolean {
-    return checkedMap.has(makeCheckedKey(marker))
+    const key = checkedKeyFor(marker, rawMarkers.value)
+    const map = collisionMarkerIds.has(marker.id) ? distinctCheckedMap : checkedMap
+    return map.has(key)
   }
 
   function toggleChecked(marker: Marker): boolean {
-    const key = makeCheckedKey(marker)
-    if (checkedMap.has(key)) {
-      checkedMap.delete(key)
-      persistChecked(checkedMap)
+    const key = checkedKeyFor(marker, rawMarkers.value)
+    const isCollision = collisionMarkerIds.has(marker.id)
+    const map = isCollision ? distinctCheckedMap : checkedMap
+    const storageKey = isCollision ? DISTINCT_CHECKED_KEY : CHECKED_KEY
+    if (map.has(key)) {
+      map.delete(key)
+      persistChecked(storageKey, map)
       return false
     } else {
-      checkedMap.set(key, { key, x: marker.lat, y: marker.lng })
-      persistChecked(checkedMap)
+      map.set(key, { key, x: marker.lat, y: marker.lng })
+      persistChecked(storageKey, map)
       return true
     }
   }
 
   function checkedCountForType(type: string): number {
     let n = 0
-    for (const [key] of checkedMap) {
-      const isEffigy = key.startsWith('effigy:')
-      const isCollectible = key.startsWith(`collectible:${type}:`)
-      if (isEffigy && type === 'LifmunkEffigy') n++
-      else if (isCollectible) n++
+    for (const map of [checkedMap, distinctCheckedMap]) {
+      for (const [key] of map) {
+        const isEffigy = key.startsWith('effigy:')
+        const isCollectible = key.startsWith(`collectible:${type}:`)
+        if (isEffigy && type === 'LifmunkEffigy') n++
+        else if (isCollectible) n++
+      }
     }
     return n
   }
 
-  const totalChecked = computed(() => checkedMap.size)
+  const totalChecked = computed(() => checkedMap.size + distinctCheckedMap.size)
 
   // ── Selected marker / popup ───────────────────────────────────────────────
 
@@ -435,6 +468,7 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     initialize,
     setZone,
     toggleType,
+    isTypeVisible,
     showOnlyType,
     setGroupVisible,
     setAllVisible,

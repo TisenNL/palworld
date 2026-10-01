@@ -22,11 +22,11 @@ import {
   latLngToIngame, formatIngameCoords, parseCoordinates,
   WORLD_SIZE, MAP_BOUNDS,
   toGamePoint, toLatLng, getMapWindow,
+  type MapZone,
 } from '@/domain/opggCoordinates'
 import { getMarkerHtml, clearMarkerHtmlCache } from '@/domain/opggMarkerIcons'
 import { markerDisplayName } from '@/types/opggMarker'
 import type { Marker } from '@/types/opggMarker'
-import type { MapZone } from '@/stores/opggMap'
 import MarkerPopup from './MarkerPopup.vue'
 
 const props = defineProps<{
@@ -53,6 +53,15 @@ let selectionStart: L.Point | null = null
 let selectionRectangle: L.Rectangle | null = null
 let selectionMoved = false
 let suppressNextMapClick = false
+
+/**
+ * Internos do Leaflet usados pelo zoom suave (`Map._move` / `Map._moveEnd`).
+ * Não existem em @types/leaflet — assinaturas espelham `leaflet/src/map/Map.js`.
+ */
+interface SmoothZoomMap extends L.Map {
+  _move(center: L.LatLng, zoom?: number, data?: { pinch?: boolean; round?: boolean }): this
+  _moveEnd(zoomChanged?: boolean): this
+}
 
 // LayerGroup per marker type for efficient show/hide
 const layerGroups    = new Map<string, L.LayerGroup>()
@@ -83,7 +92,7 @@ function cancelSmoothZoom() {
 }
 
 function smoothZoomStep(timestamp: number, prevTs: number) {
-  const m = mapInstance
+  const m = mapInstance as SmoothZoomMap | null
   if (!m || smoothZoomTarget === null || smoothZoomCenter === null) return
 
   const dt = Math.min(timestamp - prevTs, 64) || 16
@@ -138,10 +147,9 @@ function updateSelectionRectangle(e: MouseEvent): void {
   const current = selectionPointFromClientEvent(e)
   if (!current) return
   selectionMoved = selectionMoved || selectionStart.distanceTo(current) >= 4
-  selectionRectangle.setBounds([
-    mapInstance.containerPointToLatLng(selectionStart),
-    mapInstance.containerPointToLatLng(current),
-  ])
+  const cornerA = mapInstance.containerPointToLatLng(selectionStart)
+  const cornerB = mapInstance.containerPointToLatLng(current)
+  selectionRectangle.setBounds(L.latLngBounds(cornerA, cornerB))
   e.preventDefault()
 }
 
@@ -175,7 +183,7 @@ function handleMapMouseDown(e: L.LeafletMouseEvent): void {
   selectionStart = mapInstance.mouseEventToContainerPoint(originalEvent)
   selectionMoved = false
   selectionRectangle = L.rectangle(
-    [e.latlng, e.latlng],
+    L.latLngBounds(e.latlng, e.latlng),
     { color: '#8b7cf6', weight: 1, fillColor: '#8b7cf6', fillOpacity: 0.14, interactive: false },
   ).addTo(mapInstance)
   mapInstance.dragging.disable()
@@ -234,96 +242,79 @@ function rebuildIndex(markers: Marker[]) {
 }
 
 // ── syncMarkers — diff-based update (no full rebuild) ────────────────────
-function syncMarkers() {
-  const m = mapInstance
-  if (!m) return
+/** Invalida cargas em andamento — troca de zona/filtro mais rápida que um chunk. */
+let syncToken = 0
 
-  const current    = mapStore.filteredMarkers
-  const currentIds = new Set(current.map(mk => mk.id))
-
-  // Remove markers that are no longer in the filtered set
+function removeStaleMarkers(currentIds: Set<string>): void {
   for (const [id, lm] of leafletMarkers) {
-    if (!currentIds.has(id)) {
-      const type = id.split(':')[0] ?? ''
-      layerGroups.get(type)?.removeLayer(lm)
-      leafletMarkers.delete(id)
-    }
+    if (currentIds.has(id)) continue
+    const type = id.split(':')[0] ?? ''
+    layerGroups.get(type)?.removeLayer(lm)
+    leafletMarkers.delete(id)
   }
-
-  // Add only new markers (existing ones are left untouched)
-  for (const marker of current) {
-    if (leafletMarkers.has(marker.id)) continue
-    const lm = buildLeafletMarker(marker)
-    leafletMarkers.set(marker.id, lm)
-    let lg = layerGroups.get(marker.type)
-    if (!lg) { lg = L.layerGroup().addTo(m); layerGroups.set(marker.type, lg) }
-    lg.addLayer(lm)
-  }
-
-  // Fix 1 — keep the O(1) index in sync after every diff
-  rebuildIndex(current)
 }
 
-// ── Fix 2 — chunked initial load to avoid blocking the main thread ────────
-const CHUNK_SIZE = 300
-
-function syncMarkersChunked() {
+function addMarkerToMap(marker: Marker): void {
   const m = mapInstance
   if (!m) return
-
-  const current    = mapStore.filteredMarkers
-  const currentIds = new Set(current.map(mk => mk.id))
-
-  // Removals are fast — do them synchronously
-  for (const [id, lm] of leafletMarkers) {
-    if (!currentIds.has(id)) {
-      const type = id.split(':')[0] ?? ''
-      layerGroups.get(type)?.removeLayer(lm)
-      leafletMarkers.delete(id)
-    }
+  const lm = buildLeafletMarker(marker)
+  leafletMarkers.set(marker.id, lm)
+  let lg = layerGroups.get(marker.type)
+  if (!lg) {
+    lg = L.layerGroup().addTo(m)
+    layerGroups.set(marker.type, lg)
   }
+  lg.addLayer(lm)
+}
 
-  const toAdd = current.filter(mk => !leafletMarkers.has(mk.id))
-  if (toAdd.length === 0) {
-    rebuildIndex(current)
+/** Rende ao navegador entre chunks (idle, com fallback para `setTimeout`). */
+function scheduleChunk(run: () => void): void {
+  if (typeof requestIdleCallback !== 'undefined') requestIdleCallback(run, { timeout: 500 })
+  else setTimeout(run, 0)
+}
+
+/**
+ * Sincroniza o mapa com `filteredMarkers`.
+ *
+ * Lotes pequenos renderizam de uma vez; carga inicial e troca de zona (milhares
+ * de marcadores) renderizam em chunks para não congelar a main thread. Cada
+ * nova sincronização incrementa `syncToken` e descarta os chunks da anterior —
+ * sem isso, chunks velhos re-injetariam marcadores de uma zona ou filtro que
+ * já não está ativo.
+ */
+function syncMarkers(): void {
+  const token = ++syncToken
+  const current = mapStore.filteredMarkers
+  const currentIds = new Set(current.map((mk) => mk.id))
+
+  removeStaleMarkers(currentIds)
+  rebuildIndex(current)
+
+  const toAdd = current.filter((mk) => !leafletMarkers.has(mk.id))
+  if (toAdd.length <= CHUNK_SIZE) {
+    for (const marker of toAdd) addMarkerToMap(marker)
     return
   }
 
   let i = 0
-
-  function addChunk() {
+  const addChunk = (): void => {
+    if (token !== syncToken) return
     const end = Math.min(i + CHUNK_SIZE, toAdd.length)
-    for (; i < end; i++) {
-      const marker = toAdd[i]!
-      const lm = buildLeafletMarker(marker)
-      leafletMarkers.set(marker.id, lm)
-      let lg = layerGroups.get(marker.type)
-      if (!lg) { lg = L.layerGroup().addTo(m!); layerGroups.set(marker.type, lg) }
-      lg.addLayer(lm)
-    }
-
-    if (i < toAdd.length) {
-      // Yield to the browser between chunks
-      if (typeof requestIdleCallback !== 'undefined') {
-        requestIdleCallback(addChunk, { timeout: 500 })
-      } else {
-        setTimeout(addChunk, 0)
-      }
-    } else {
-      // All chunks done — rebuild the full index
-      rebuildIndex(current)
-    }
+    for (; i < end; i++) addMarkerToMap(toAdd[i]!)
+    if (i < toAdd.length) scheduleChunk(addChunk)
   }
-
-  addChunk()
+  scheduleChunk(addChunk)
 }
+
+// ── Fix 2 — chunked initial load to avoid blocking the main thread ────────
+const CHUNK_SIZE = 300
 
 // ── Fix 1 — refreshMarkerIcons uses O(1) index ───────────────────────────
 function refreshMarkerIcons() {
   for (const [id, lm] of leafletMarkers) {
     const marker = filteredMarkersById.get(id)   // O(1) — was O(n) find()
     if (!marker) continue
-    lm.setIcon(makeIcon(marker, mapStore.isChecked(marker)))
+    lm.setIcon(makeIcon(marker, mapStore.isChecked(marker), mapStore.selectedMarkerIds.has(id)))
   }
 }
 
@@ -395,7 +386,7 @@ function initMap() {
 
   updateZoomPercent(zoom)
   // Fix 2 — use chunked loader on initial mount to avoid blocking the UI
-  nextTick(syncMarkersChunked)
+  void nextTick(syncMarkers)
   emit('mapReady')
 }
 
@@ -416,14 +407,18 @@ watch(() => mapStore.totalChecked, () => {
     if (!marker) continue
 
     const isNowChecked = mapStore.isChecked(marker)
+    const isNowSelected = mapStore.selectedMarkerIds.has(id)
     // DOM check — avoids setIcon when nothing changed
     const el = lm.getElement()
     const wasChecked = el
       ? el.querySelector('.palworld-map-marker-checked') !== null
       : false
-    if (isNowChecked === wasChecked) continue
+    const wasSelected = el
+      ? el.querySelector('.palworld-map-marker-selected') !== null
+      : false
+    if (isNowChecked === wasChecked && isNowSelected === wasSelected) continue
 
-    lm.setIcon(makeIcon(marker, isNowChecked))
+    lm.setIcon(makeIcon(marker, isNowChecked, isNowSelected))
   }
 })
 
@@ -480,7 +475,7 @@ watch(() => props.mapZone, async (newZone) => {
 
   await nextTick()
   // Fix 2 — chunked load also on zone switch (new zone may have many markers)
-  syncMarkersChunked()
+  syncMarkers()
 })
 
 // ── Exposed API ───────────────────────────────────────────────────────────
@@ -514,7 +509,7 @@ function toggleFullscreen() {
   if (!document.fullscreenElement) {
     el.requestFullscreen?.().catch(() => {})
   } else {
-    document.exitFullscreen?.()
+    void document.exitFullscreen?.()
   }
 }
 
@@ -524,6 +519,7 @@ defineExpose({ zoomIn, zoomOut, flyTo, centerIngame, getMap })
 onMounted(initMap)
 
 onBeforeUnmount(() => {
+  syncToken++ // aborta chunks pendentes
   cancelSmoothZoom()
   clearTimeout(sizeDebounceTimer)
   mapContainer.value?.removeEventListener('wheel', handleWheel)

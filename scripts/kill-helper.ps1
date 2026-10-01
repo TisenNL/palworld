@@ -9,8 +9,16 @@ Get-CimInstance Win32_Process | Where-Object {
 
 $port = if ($env:PALWORLD_PORT) { [int]$env:PALWORLD_PORT } else { 8765 }
 Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | ForEach-Object {
-  Write-Host ("KILL port8765 $($_.OwningProcess)")
-  Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
+  $owner = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue
+  if (-not $owner) { return }
+  # Só mata se for mesmo o helper (python). Qualquer outro serviço que use a
+  # porta permanece intacto.
+  if ($owner.Name -match '^(python|py)w?\d*\.exe$') {
+    Write-Host ("KILL port$port $($owner.Id) ($($owner.Name))")
+    Stop-Process -Id $owner.Id -Force -ErrorAction SilentlyContinue
+  } else {
+    Write-Host ("SKIP port$port belongs to $($owner.Name) - not the helper")
+  }
 }
 
 Start-Sleep -Seconds 1

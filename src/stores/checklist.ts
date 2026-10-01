@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, reactive, ref, shallowRef, toRaw } from 'vue'
 
 import { buildLayers, layerItems } from '@/domain/layers'
+import { mergeProgressChanges } from '@/domain/progressMerge'
 import { api } from '@/services/api'
 import type {
   BreedData,
@@ -37,10 +38,24 @@ const storageKeys: Record<StorageKey, string> = {
 const PROGRESS_STORAGE_KEY = 'palworld-progress-v2'
 const BREED_OWNED_STORAGE_KEY = 'palworld-breed-owned-v1'
 
+function emptyProgress(): ProgressPayload {
+  return progressSchema.parse({
+    version: 2,
+    revision: 0,
+    checks: emptyChecks(),
+    breedOwned: {},
+    prefs: {},
+  })
+}
+
 function readChecked(key: string): CheckedItems {
   try {
     const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>
-    return Object.fromEntries(Object.keys(raw).filter((id) => raw[id] === true)) as CheckedItems
+    const checked: CheckedItems = {}
+    for (const id of Object.keys(raw)) {
+      if (raw[id] === true) checked[id] = true
+    }
+    return checked
   } catch {
     return {}
   }
@@ -69,6 +84,8 @@ export const useChecklistStore = defineStore('checklist', () => {
   const initialized = ref(false)
   let revision = 0
   let saveTimer: number | undefined
+  let serverBaseline = emptyProgress()
+  let saveQueue: Promise<void> = Promise.resolve()
 
   const layers = computed<MapLayer[]>(() => {
     if (!data.value) return []
@@ -116,36 +133,28 @@ export const useChecklistStore = defineStore('checklist', () => {
     scheduleSave()
   }
 
-  function payload(): ProgressPayload {
+  function snapshot(currentRevision: number): ProgressPayload {
     const preferences = usePreferencesStore()
     const cake = useCakeStore()
-    const result: ProgressPayload = {
+    return {
       version: 2,
-      revision: ++revision,
+      revision: currentRevision,
       updatedAt: new Date().toISOString(),
       checks: structuredClone(toRaw(checked)),
       breedOwned: structuredClone(toRaw(breedOwned)),
       prefs: structuredClone(toRaw(preferences.values)),
       cake: cake.snapshot(),
     }
+  }
+
+  function payload(): ProgressPayload {
+    revision = Math.max(revision, serverBaseline.revision) + 1
+    const result = snapshot(revision)
     localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(result))
     return result
   }
 
-  function scheduleSave(): void {
-    window.clearTimeout(saveTimer)
-    saveTimer = window.setTimeout(() => {
-      const next = payload()
-      void api.saveProgress(next).catch(() => undefined)
-    }, 350)
-  }
-
-  function exportProgress(): ProgressPayload {
-    return payload()
-  }
-
-  function replaceProgress(next: ProgressPayload): void {
-    revision = Math.max(revision, next.revision)
+  function applyProgressState(next: ProgressPayload): void {
     for (const key of checkCategories) {
       Object.keys(checked[key]).forEach((id) => delete checked[key][id])
       Object.assign(checked[key], next.checks[key])
@@ -156,6 +165,54 @@ export const useChecklistStore = defineStore('checklist', () => {
     localStorage.setItem(BREED_OWNED_STORAGE_KEY, JSON.stringify(breedOwned))
     usePreferencesStore().apply(next.prefs)
     if (next.cake) useCakeStore().hydrate(next.cake)
+  }
+
+  function scheduleSave(): void {
+    window.clearTimeout(saveTimer)
+    saveTimer = window.setTimeout(() => {
+      const next = payload()
+      const baseAtCapture = serverBaseline
+      saveQueue = saveQueue
+        .then(async () => {
+          let outgoing = next
+          let base = baseAtCapture
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const result = await api.saveProgress(outgoing, base.revision)
+            if (result.status === 'saved') {
+              serverBaseline = result.progress
+              revision = Math.max(revision, serverBaseline.revision)
+              error.value = ''
+              return
+            }
+            const latest = result.progress
+            let rebased = mergeProgressChanges(base, outgoing, latest)
+            rebased = mergeProgressChanges(outgoing, snapshot(revision), rebased)
+            applyProgressState(rebased)
+            outgoing = {
+              ...rebased,
+              revision: latest.revision + 1,
+              updatedAt: new Date().toISOString(),
+            }
+            localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(outgoing))
+            base = latest
+            serverBaseline = latest
+            revision = Math.max(revision, outgoing.revision)
+          }
+          throw new Error('Progress changed in another tab; retry the save.')
+        })
+        .catch((cause: unknown) => {
+          error.value = cause instanceof Error ? cause.message : 'Failed to save progress'
+        })
+    }, 350)
+  }
+
+  function exportProgress(): ProgressPayload {
+    return payload()
+  }
+
+  function replaceProgress(next: ProgressPayload): void {
+    revision = Math.max(revision, next.revision)
+    applyProgressState(next)
     scheduleSave()
   }
 
@@ -176,6 +233,7 @@ export const useChecklistStore = defineStore('checklist', () => {
         api.getMapIcons(),
         api.getProgress().catch(() => null),
       ])
+      serverBaseline = remote ?? emptyProgress()
       data.value = game
       breedData.value = breeds
       mapIcons.value = icons
@@ -212,9 +270,25 @@ export const useChecklistStore = defineStore('checklist', () => {
         }
       }
       initialized.value = true
+      const hasUnsavedLocal =
+        local !== null &&
+        current === local &&
+        (!remote ||
+          JSON.stringify({
+            checks: local.checks,
+            breedOwned: local.breedOwned,
+            prefs: local.prefs,
+            cake: local.cake,
+          }) !==
+            JSON.stringify({
+              checks: remote.checks,
+              breedOwned: remote.breedOwned,
+              prefs: remote.prefs,
+              cake: remote.cake,
+            }))
       const needsCakeMirror =
         !current?.cake && Boolean(localStorage.getItem('palworld-cake-state-v1'))
-      if (recoveredBreedSelection || needsCakeMirror) scheduleSave()
+      if (recoveredBreedSelection || needsCakeMirror || hasUnsavedLocal) scheduleSave()
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Failed to load application data'
       throw cause
@@ -226,7 +300,7 @@ export const useChecklistStore = defineStore('checklist', () => {
   function flush(): void {
     if (!initialized.value) return
     window.clearTimeout(saveTimer)
-    const body = JSON.stringify(payload())
+    const body = JSON.stringify({ progress: payload(), baseRevision: serverBaseline.revision })
     const blob = new Blob([body], { type: 'application/json' })
     if (blob.size > 60 * 1024) {
       void fetch('/progress', {

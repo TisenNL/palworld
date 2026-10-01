@@ -142,10 +142,30 @@ const palpagosMarkers = []
 const worldtreeMarkers = []
 const counts = { palpagos: {}, worldtree: {} }
 
-let idCounter = 0
+/**
+ * Id estável e **único**: `{type}:{lat}:{lng}` com 4 casas + sufixo se repetir.
+ *
+ * Pontos distintos podem cair nas mesmas coordenadas (veio de carvão com Z
+ * diferente; duas quests empilhadas). Sem o sufixo eles colapsam num só id e o
+ * renderer deduplica por id — o marcador extra fica invisível, a contagem do
+ * sidebar não bate com o mapa e o estado de "checked" vira compartilhado.
+ */
+const usedIds = new Set()
 
 function makeId(type, lat, lng) {
-  return `${type}:${lat.toFixed(4)}:${lng.toFixed(4)}`
+  const base = `${type}:${lat.toFixed(4)}:${lng.toFixed(4)}`
+  if (!usedIds.has(base)) {
+    usedIds.add(base)
+    return base
+  }
+  let n = 1
+  let unique
+  do {
+    n += 1
+    unique = `${base}#${n}`
+  } while (usedIds.has(unique))
+  usedIds.add(unique)
+  return unique
 }
 
 function addMarker(type, group, subtype, coords, extra) {

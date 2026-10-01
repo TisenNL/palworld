@@ -35,7 +35,12 @@ export const MAP_WINDOW_WORLD_TREE = {
   maxY: -476_400,
 } as const
 
-export type MapWindow = typeof MAP_WINDOW_PALPAGOS
+export interface MapWindow {
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+}
 
 export type MapZone = 'palpagos' | 'world-tree'
 

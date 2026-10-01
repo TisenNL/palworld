@@ -1,4 +1,5 @@
 import type { ZodType } from 'zod'
+import { z } from 'zod'
 
 import {
   breedDataSchema,
@@ -29,6 +30,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    readonly responseBody?: string,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -48,6 +50,7 @@ async function request(
     throw new ApiError(
       detail || `HTTP request failed with status ${response.status}`,
       response.status,
+      detail,
     )
   }
   return response
@@ -65,12 +68,24 @@ export const api = {
   getMapIcons: (): Promise<MapIconsData> => json('/map_icons.json', mapIconsSchema),
   getProgress: (): Promise<ProgressPayload> =>
     json('/progress', progressSchema, { cache: 'no-store' }),
-  saveProgress: async (payload: ProgressPayload): Promise<void> => {
-    await request('/progress', {
+  saveProgress: async (
+    payload: ProgressPayload,
+    baseRevision: number,
+  ): Promise<{ status: 'saved' | 'conflict'; progress: ProgressPayload }> => {
+    const init: RequestInit = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
+      body: JSON.stringify({ progress: payload, baseRevision }),
+    }
+    try {
+      const response = await request('/progress', init)
+      const result = z.object({ progress: progressSchema }).parse(await response.json())
+      return { status: 'saved', progress: result.progress }
+    } catch (cause) {
+      if (!(cause instanceof ApiError) || cause.status !== 409 || !cause.responseBody) throw cause
+      const result = z.object({ progress: progressSchema }).parse(JSON.parse(cause.responseBody))
+      return { status: 'conflict', progress: result.progress }
+    }
   },
   health: (): Promise<HealthState> => json('/health', healthSchema, { cache: 'no-store' }),
   setHud: async (x: number, y: number, label: string): Promise<void> => {

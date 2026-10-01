@@ -26,7 +26,7 @@ const recipeMeta: Record<string, { tint: string; blurb: string; icon: string }> 
   special: { tint: '#fbbf24', blurb: 'Festival centerpiece', icon: '/cake-icons/special.webp' },
 }
 
-const ingredientTint: Record<string, string> = {
+const ingredientTint: Record<CakeKey, string> = {
   berry: '#fb7185',
   milk: '#e2e8f0',
   egg: '#fde68a',
@@ -45,7 +45,7 @@ const ingredientTint: Record<string, string> = {
   honey: '#f59e0b',
 }
 
-const ingredientIcon: Record<string, string> = {
+const ingredientIcon: Record<CakeKey, string> = {
   berry: '/ingredient-icons/berry.webp',
   milk: '/ingredient-icons/milk.webp',
   egg: '/ingredient-icons/egg.webp',

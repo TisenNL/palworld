@@ -153,7 +153,7 @@ export function getMarkerBgColor(marker: Marker): string {
 // every refreshMarkerIcons call and lets buildLeafletMarker reuse results
 // on filter changes where the same marker reappears.
 //
-// Key: "{type}:{subtype}:{pixelSize}:{checked 0|1}:{selected 0|1}:{level}"
+// Key: "{type}:{group}:{subtype}:{pixelSize}:{checked 0|1}:{selected 0|1}:{level}"
 // The level is included because FieldBoss/BossTower embed it in the badge.
 
 const _htmlCache = new Map<string, string>()
@@ -173,7 +173,7 @@ export function getMarkerHtml(
 ): string {
   const level   = typeof marker.extra?.level === 'number' ? marker.extra.level : null
   // Cache key encodes every dimension that affects the output HTML.
-  const cacheKey = `${marker.type}:${marker.subtype ?? ''}:${pixelSize}:${checked ? 1 : 0}:${selected ? 1 : 0}:${level ?? ''}`
+  const cacheKey = `${marker.type}:${marker.group}:${marker.subtype ?? ''}:${pixelSize}:${checked ? 1 : 0}:${selected ? 1 : 0}:${level ?? ''}`
 
   const cached = _htmlCache.get(cacheKey)
   if (cached !== undefined) return cached

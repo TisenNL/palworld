@@ -6,7 +6,16 @@ import pluginVue from 'eslint-plugin-vue'
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'tools/**', '.kilo/**', '**/*.js'],
+    ignores: [
+      'dist/**',
+      'coverage/**',
+      'node_modules/**',
+      'tools/**',
+      // Scripts Node puros (sem projeto TS) — o lint type-aware não os alcança.
+      'scripts/**',
+      '.kilo/**',
+      '**/*.js',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

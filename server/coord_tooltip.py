@@ -37,7 +37,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DIST_ROOT = PROJECT_ROOT / "dist"
 PROGRESS_PATH = PROJECT_ROOT / ".local" / "progress.json"
 LEGACY_PROGRESS_PATH = PROJECT_ROOT / "progress.json"
-PROGRESS_LOCK = threading.Lock()
+PROGRESS_LOCK = threading.RLock()  # reentrante: save lê o estado atual dentro do lock
 
 # Fast-path: skip white-mask fallback when focused crops already agree.
 OCR_EARLY_EXIT_VOTES = 2
@@ -75,6 +75,43 @@ WT_TILE_DISK = PROJECT_ROOT / ".cache" / "map-tiles-wt"
 ICON_DISK = PROJECT_ROOT / ".cache" / "map-icons"
 BUNDLED_ICON_DISK = Path(__file__).resolve().parent / "static" / "map-icons"
 ICON_ALLOWED_HOSTS = {"cdn.paldb.cc"}
+
+# ── Quem pode falar com o helper ────────────────────────────────────────────
+# O helper expõe automação de mouse/teclado (e o progresso) em 127.0.0.1.
+# Sem restrição, qualquer página aberta no navegador do usuário poderia fazer
+# fetch para cá: um POST simples (text/plain) não gera preflight, então o
+# navegador entrega o corpo sem perguntar. O hostname é o que fecha o vetor
+# (ataque remoto e DNS rebinding nunca chegam com Host/Origin local).
+ALLOWED_LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
+
+# Corpos de POST limitados (o maior caso de uso é o payload de progresso).
+MAX_POST_BYTES = 4 * 1024 * 1024
+
+
+def _origin_is_local(origin: str) -> bool:
+    """`Origin` vazio = cliente não-navegador (curl/urllib/run.py) → permite.
+
+    Um ataque vindo de página web sempre carrega `Origin`, então recusar
+    qualquer host que não seja a própria máquina fecha o vetor.
+    """
+    origin = (origin or "").strip()
+    if not origin:
+        return True
+    parsed = urlparse(origin)
+    if parsed.scheme not in ("http", "https"):
+        return False
+    return (parsed.hostname or "") in ALLOWED_LOCAL_HOSTS
+
+
+def _host_is_local(host: str) -> bool:
+    """Guarda contra DNS rebinding: o `Host` precisa apontar para esta máquina."""
+    host = (host or "").strip().lower()
+    if host.startswith("["):  # IPv6 literal: [::1]:8765
+        end = host.find("]")
+        host = host[1:end] if end != -1 else host
+    elif host.count(":") == 1:
+        host = host.split(":", 1)[0]
+    return host in ALLOWED_LOCAL_HOSTS
 TILE_BYTES_CACHE: Dict[Tuple[str, int, int, int], bytes] = {}
 ICON_BYTES_CACHE: Dict[str, bytes] = {}
 _TILE_FETCH_LOCK = threading.Semaphore(4)
@@ -240,10 +277,27 @@ def load_progress_file() -> dict:
 
 
 def save_progress_file(body: dict) -> dict:
-    checks_in = body.get("checks") if isinstance(body.get("checks"), dict) else {}
-    prefs_in = body.get("prefs") if isinstance(body.get("prefs"), dict) else {}
-    owned_in = body.get("breedOwned") if isinstance(body.get("breedOwned"), dict) else {}
-    cake_in = body.get("cake") if isinstance(body.get("cake"), dict) else None
+    progress_in = body.get("progress")
+    base_revision = body.get("baseRevision")
+    if (
+        not isinstance(progress_in, dict)
+        or not isinstance(base_revision, int)
+        or isinstance(base_revision, bool)
+        or base_revision < 0
+    ):
+        return {"invalid": True}
+
+    checks_in = progress_in.get("checks")
+    prefs_in = progress_in.get("prefs")
+    owned_in = progress_in.get("breedOwned")
+    if (
+        not isinstance(checks_in, dict)
+        or any(not isinstance(checks_in.get(key), dict) for key in CHECK_KEYS)
+        or not isinstance(prefs_in, dict)
+        or not isinstance(owned_in, dict)
+    ):
+        return {"invalid": True}
+    cake_in = progress_in.get("cake") if isinstance(progress_in.get("cake"), dict) else None
     checks: dict = {}
     for key in CHECK_KEYS:
         raw = checks_in.get(key)
@@ -253,29 +307,28 @@ def save_progress_file(body: dict) -> dict:
         checks[key] = {str(k): True for k, v in raw.items() if v}
     breed_owned = {str(k): True for k, v in owned_in.items() if v}
     payload = {
-        "version": max(1, int(body.get("version") or 1)),
-        "revision": max(0, int(body.get("revision") or 0)),
-        "updatedAt": body.get("updatedAt") or time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "version": max(1, int(progress_in.get("version") or 1)),
+        "revision": max(0, int(progress_in.get("revision") or 0)),
+        "updatedAt": progress_in.get("updatedAt") or time.strftime("%Y-%m-%dT%H:%M:%S"),
         "checks": checks,
         "breedOwned": breed_owned,
         "prefs": prefs_in,
     }
-    if cake_in is not None:
-        payload["cake"] = cake_in
-    else:
-        existing = load_progress_file()
-        if isinstance(existing.get("cake"), dict):
-            payload["cake"] = existing["cake"]
     with PROGRESS_LOCK:
+        stored = load_progress_file()
+        stored_revision = int(stored.get("revision") or 0)
+        if base_revision != stored_revision:
+            return {"conflict": True, "progress": stored}
+        payload["revision"] = stored_revision + 1
+        if cake_in is None and isinstance(stored.get("cake"), dict):
+            payload["cake"] = stored["cake"]
         PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp = PROGRESS_PATH.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(PROGRESS_PATH)
     return {
         "ok": True,
-        "updatedAt": payload["updatedAt"],
-        "counts": {k: len(v) for k, v in checks.items()},
-        "owned": len(breed_owned),
+        "progress": payload,
     }
 if hasattr(ctypes, "WINFUNCTYPE"):
     MonitorEnumProc = ctypes.WINFUNCTYPE(
@@ -1035,9 +1088,26 @@ class Handler(BaseHTTPRequestHandler):
         print("[http]", fmt % args, flush=True)
 
     def _cors(self) -> None:
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # Ecoa só a origem local — nunca "*".
+        origin = self.headers.get("Origin", "")
+        if not _origin_is_local(origin):
+            return
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+
+    def _request_allowed(self) -> bool:
+        """Recusa páginas de outros domínios (e DNS rebinding) antes de agir."""
+        host = self.headers.get("Host")
+        if host is not None and not _host_is_local(host):
+            self._json(403, {"ok": False, "error": "forbidden host"})
+            return False
+        if not _origin_is_local(self.headers.get("Origin", "")):
+            self._json(403, {"ok": False, "error": "forbidden origin"})
+            return False
+        return True
 
     def _json(self, code: int, obj: dict) -> None:
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -1084,11 +1154,15 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_OPTIONS(self):
+        if not self._request_allowed():
+            return
         self.send_response(204)
         self._cors()
         self.end_headers()
 
     def do_GET(self):
+        if not self._request_allowed():
+            return
         parsed = urlparse(self.path)
         if parsed.path == "/game-marker/state":
             t0 = time.perf_counter()
@@ -1197,11 +1271,22 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"ok": False})
 
     def do_POST(self):
-        length = int(self.headers.get("Content-Length") or 0)
-        raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+        if not self._request_allowed():
+            return
         try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            self._json(400, {"ok": False, "error": "content-length"})
+            return
+        if length < 0 or length > MAX_POST_BYTES:
+            # `rfile.read(-1)` bloqueia a thread até o peer fechar — com um
+            # ThreadingHTTPServer isso esgota as threads com requisições triviais.
+            self._json(413, {"ok": False, "error": "payload too large"})
+            return
+        try:
+            raw = self.rfile.read(length).decode("utf-8") if length else "{}"
             body = json.loads(raw) if raw else {}
-        except json.JSONDecodeError:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             self._json(400, {"ok": False})
             return
 
@@ -1353,6 +1438,12 @@ class Handler(BaseHTTPRequestHandler):
                 result = save_progress_file(body if isinstance(body, dict) else {})
             except Exception as exc:
                 self._json(500, {"ok": False, "error": str(exc)})
+                return
+            if result.get("invalid"):
+                self._json(400, {"ok": False, "error": "baseRevision is required"})
+                return
+            if result.get("conflict"):
+                self._json(409, {"ok": False, "error": "revision conflict", **result})
                 return
             self._json(200, result)
             return

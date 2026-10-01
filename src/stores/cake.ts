@@ -30,7 +30,18 @@ function mergeValues(
   return next
 }
 
-function readState(): CakeState {
+/**
+ * Estado persistido.
+ * O schema zod de `CakeState` aceita registros abertos (chaves novas podem faltar
+ * em payloads antigos), mas o domínio exige todas as `CakeKey`. `readState()`
+ * preenche as faltantes, então devolvemos o tipo estreito.
+ */
+type StoredCakeState = Omit<CakeState, 'prices' | 'stock'> & {
+  prices: CakeValues
+  stock: CakeValues
+}
+
+function readState(): StoredCakeState {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Partial<CakeState>
     return {
@@ -66,7 +77,10 @@ export const useCakeStore = defineStore('cake', () => {
   const target = ref(stored.target)
   const prices = reactive<CakeValues>({ ...stored.prices })
   const stock = reactive<CakeValues>({ ...stored.stock })
-  let suppressPersist = false
+  /** Último estado persistido — evita escrita redundante e substitui um flag
+   *  de "suprimir", que nunca funcionaria: o watcher do Vue roda em flush
+   *  assíncrono, depois do `finally`. */
+  let lastPersisted = JSON.stringify(stored)
 
   const recipe = computed(
     () => cakeRecipes.find((item) => item.id === recipeId.value) ?? cakeRecipes[0]!,
@@ -87,24 +101,23 @@ export const useCakeStore = defineStore('cake', () => {
 
   function hydrate(next: CakeState | undefined | null): void {
     if (!next) return
-    suppressPersist = true
-    try {
-      recipeId.value = typeof next.recipe === 'string' ? next.recipe : recipeId.value
-      gold.value = clampNumber(next.gold)
-      target.value = clampNumber(next.target)
-      Object.assign(prices, mergeValues(priceDefaults, next.prices))
-      Object.assign(stock, mergeValues(emptyStock, next.stock))
-      writeState(snapshot())
-    } finally {
-      suppressPersist = false
-    }
+    recipeId.value = typeof next.recipe === 'string' ? next.recipe : recipeId.value
+    gold.value = clampNumber(next.gold)
+    target.value = clampNumber(next.target)
+    Object.assign(prices, mergeValues(priceDefaults, next.prices))
+    Object.assign(stock, mergeValues(emptyStock, next.stock))
+    const loaded = snapshot()
+    lastPersisted = JSON.stringify(loaded)
+    writeState(loaded)
   }
 
   watch(
     [recipeId, gold, target, prices, stock],
     () => {
-      if (suppressPersist) return
       const state = snapshot()
+      const encoded = JSON.stringify(state)
+      if (encoded === lastPersisted) return
+      lastPersisted = encoded
       writeState(state)
       const checklist = useChecklistStore()
       if (checklist.initialized) checklist.scheduleSave()

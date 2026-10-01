@@ -3,7 +3,7 @@ import SafeImage from '@/components/common/SafeImage.vue'
 import type { Pal } from '@/types/data'
 
 defineProps<{
-  pal?: Pal
+  pal?: Pal | undefined
   owned?: boolean
   interactive?: boolean
 }>()

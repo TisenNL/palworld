@@ -78,6 +78,35 @@ describe('opggMap multi-select (batch mark queue)', () => {
     expect(store.selectionMarkers.map((m) => m.id)).toEqual([a.id])
   })
 
+  it('keeps colocated marker progress distinct and recognizes the legacy key', () => {
+    const legacyKey = 'collectible:Chestbox:-10:10'
+    localStorage.setItem(
+      'palworld:map:checked-collectibles',
+      JSON.stringify([{ key: legacyKey, x: -10, y: 10 }]),
+    )
+    const store = useOpggMapStore()
+    const first = makeMarker({ id: 'Chestbox:-10.0000:10.0000' })
+    const second = makeMarker({ id: 'Chestbox:-10.0000:10.0000#2' })
+    store.rawMarkers = [first, second]
+
+    expect(store.isChecked(first)).toBe(true)
+    expect(store.isChecked(second)).toBe(false)
+    expect(store.toggleChecked(second)).toBe(true)
+    expect(store.isChecked(first)).toBe(true)
+    expect(store.isChecked(second)).toBe(true)
+
+    const legacySaved = JSON.parse(
+      localStorage.getItem('palworld:map:checked-collectibles') ?? '[]',
+    ) as Array<{ key: string }>
+    const distinctSaved = JSON.parse(
+      localStorage.getItem('palworld:map:checked-collectibles:distinct') ?? '[]',
+    ) as Array<{ key: string }>
+    expect(legacySaved.map((item) => item.key)).toEqual([legacyKey])
+    expect(distinctSaved.map((item) => item.key)).toEqual([
+      `${legacyKey}#${encodeURIComponent(second.id)}`,
+    ])
+  })
+
   it('clears the selection when the map zone changes', async () => {
     vi.stubGlobal(
       'fetch',

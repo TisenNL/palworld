@@ -26,20 +26,9 @@ export type BreedingWorkerRequest =
       data: BreedData
       owned: string[]
     }
-  | {
-      id: number
-      action: 'cancel'
-    }
-
-let currentCancelId: number | null = null
 
 self.onmessage = (event: MessageEvent<BreedingWorkerRequest>) => {
   const request = event.data
-  if (request.action === 'cancel') {
-    currentCancelId = request.id
-    self.postMessage({ id: request.id, cancelled: true })
-    return
-  }
   const engine = createBreedingEngine(request.data)
   try {
     let result: unknown
@@ -50,11 +39,7 @@ self.onmessage = (event: MessageEvent<BreedingWorkerRequest>) => {
     } else {
       result = engine.generations(request.owned)
     }
-    if (currentCancelId === request.id) {
-      self.postMessage({ id: request.id, cancelled: true })
-    } else {
-      self.postMessage({ id: request.id, result })
-    }
+    self.postMessage({ id: request.id, result })
   } catch (cause) {
     self.postMessage({
       id: request.id,

@@ -11,11 +11,9 @@ import LeafletMapView from '@/components/map/LeafletMapView.vue'
 import { useOpggMapStore } from '@/stores/opggMap'
 import { useServerHudStore } from '@/stores/serverHud'
 import { getFilterIconUrl } from '@/domain/opggMarkerIcons'
-import { formatIngameCoords, toGamePoint, toLatLng, getMapWindow } from '@/domain/opggCoordinates'
+import { toGamePoint, toLatLng, getMapWindow, type MapZone } from '@/domain/opggCoordinates'
 import { markerDisplayName, markerFilterLabel, GROUPS, GROUP_LABELS } from '@/types/opggMarker'
 import type { BatchQueueItem } from '@/types/batch'
-import type { Marker } from '@/types/opggMarker'
-import type { MapZone } from '@/stores/opggMap'
 
 interface LeafletExposed {
   zoomIn: () => void
@@ -52,11 +50,6 @@ watch(searchInput, (val) => {
 })
 
 // ── Computed ──────────────────────────────────────────────────────────────
-const activeZone = computed({
-  get: () => mapStore.activeZone,
-  set: (z: MapZone) => { mapStore.setZone(z) },
-})
-
 const markerSizeSliderStyle = computed(() => ({
   '--range-progress': `${mapStore.markerSize}%`,
 }))
@@ -71,11 +64,11 @@ function toggleAllMarkers(): void {
 function isGroupPartiallyVisible(group: string): boolean {
   const types = mapStore.typesByGroup[group] ?? []
   if (types.length === 0) return false
-  return types.some(t => !mapStore.visibleTypes.has(t))
+  return types.some((t) => mapStore.isTypeVisible(t))
 }
 
 function isTypeActive(type: string): boolean {
-  return !mapStore.visibleTypes.has(type)
+  return mapStore.isTypeVisible(type)
 }
 
 function filterIconStyle(filterKey: string): Record<string, string> {
@@ -86,12 +79,6 @@ function filterIconStyle(filterKey: string): Record<string, string> {
 // ── Zone switch ───────────────────────────────────────────────────────────
 async function switchZone(zone: MapZone) {
   await mapStore.setZone(zone)
-}
-
-// ── Fly to marker ─────────────────────────────────────────────────────────
-function flyToMarker(marker: Marker) {
-  leafletRef.value?.flyTo(marker.lat, marker.lng, 5)
-  mapStore.selectMarker(marker)
 }
 
 // ── OCR ───────────────────────────────────────────────────────────────────
@@ -136,7 +123,7 @@ async function toggleHudForSelected() {
   const fakeItem = { id: mk.id, x: mk.ingameX, y: mk.ingameY }
   const label = markerDisplayName(mk)
   try {
-    const enabled = await server.toggleHud(fakeItem as any, label)
+    const enabled = await server.toggleHud(fakeItem, label)
     toast.add({ severity: 'info',
       summary: enabled ? 'HUD enabled' : 'HUD disabled', detail: label, life: 2200 })
   } catch {

@@ -114,6 +114,12 @@ export const useServerHudStore = defineStore('serverHud', () => {
       }
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Game marker status failed'
+      // Uma falha transitória não pode matar o polling: `waitForGameMarkerDone`
+      // depende dele para sair do laço. Reagenda com backoff enquanto a
+      // automação ainda estiver ativa.
+      if (gameMarker.value?.active === true) {
+        gameMarkerTimer = window.setTimeout(() => void pollGameMarker(), 1_000)
+      }
     } finally {
       pollingGameMarker = false
     }
@@ -130,6 +136,9 @@ export const useServerHudStore = defineStore('serverHud', () => {
       }
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Mouse loop status failed'
+      if (mouseLoop.value?.active === true) {
+        mouseLoopTimer = window.setTimeout(() => void pollMouseLoop(), 1_000)
+      }
     } finally {
       pollingMouseLoop = false
     }
@@ -162,10 +171,12 @@ export const useServerHudStore = defineStore('serverHud', () => {
       if (state && !state.active && TERMINAL_GAME_MARKER_STATUSES.has(state.status)) {
         return state.status
       }
-      if (state && !state.active) {
-        await pollGameMarker()
-        const fresh = gameMarker.value
-        if (fresh && TERMINAL_GAME_MARKER_STATUSES.has(fresh.status)) return fresh.status
+      // Estado desconhecido (o primeiro poll falhou) ou já fora de execução:
+      // pergunta de novo em vez de girar ocioso até estourar o timeout.
+      if (!state || !state.active) await pollGameMarker()
+      const fresh = gameMarker.value
+      if (fresh && !fresh.active && TERMINAL_GAME_MARKER_STATUSES.has(fresh.status)) {
+        return fresh.status
       }
       if (Date.now() > deadline) return 'error'
       await delay(150)

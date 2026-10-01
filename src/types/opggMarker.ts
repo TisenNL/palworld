@@ -189,7 +189,7 @@ export function markerFilterLabel(key: string): string {
     return 'Chest'
   }
   const resolvedSubtype = type === 'LifmunkEffigy' || type === 'Eggs' ? scope : null
-  return markerTypeLabel(type, resolvedSubtype)
+  return type ? markerTypeLabel(type, resolvedSubtype) : key
 }
 
 /** Returns a display name for a marker, using name/level from extra when available. */
