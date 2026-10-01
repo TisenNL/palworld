@@ -12,6 +12,7 @@ import { useOpggMapStore } from '@/stores/opggMap'
 import { useServerHudStore } from '@/stores/serverHud'
 import { formatIngameCoords, toGamePoint, toLatLng, getMapWindow } from '@/domain/opggCoordinates'
 import { markerDisplayName, markerTypeLabel, GROUPS, GROUP_LABELS } from '@/types/opggMarker'
+import type { BatchQueueItem } from '@/types/batch'
 import type { Marker } from '@/types/opggMarker'
 import type { MapZone } from '@/stores/opggMap'
 
@@ -132,9 +133,7 @@ async function toggleHudForSelected() {
   }
 }
 
-// ── Mark in game ──────────────────────────────────────────────────────────
-const MARK_MAX_RETRIES = 3
-
+// ── Mark in game (single) ─────────────────────────────────────────────────
 async function markInGame() {
   const mk = mapStore.selectedMarker
   if (!mk || markInGameRunning.value) return
@@ -146,27 +145,16 @@ async function markInGame() {
   }
   markInGameRunning.value = true
   try {
-    const fakeItem = { id: mk.id, x: mk.ingameX, y: mk.ingameY }
-    let attempt = 0
-    let finalStatus = ''
-    while (attempt < MARK_MAX_RETRIES) {
-      attempt++
-      try {
-        await server.startGameMarker(fakeItem as any)
-        toast.add({ severity: 'info', summary: 'Automation started',
-          detail: `${markerDisplayName(mk)} — Press Esc to cancel.`, life: 5000 })
-      } catch {
-        toast.add({ severity: 'error', summary: 'Automation unavailable',
-          detail: server.error || 'Could not start.', life: 4000 })
-        finalStatus = 'error'; break
-      }
-      finalStatus = await waitForGameMarkerDone()
-      if (finalStatus === 'cancelled' || finalStatus === 'completed') break
-      if (attempt < MARK_MAX_RETRIES) await delay(800)
-    }
-    if (finalStatus !== 'completed') {
-      toast.add({ severity: finalStatus === 'cancelled' ? 'warn' : 'error',
-        summary: finalStatus === 'cancelled' ? 'Automation cancelled' : 'Automation failed',
+    const status = await server.runSingleMark(
+      { id: mk.id, x: mk.ingameX, y: mk.ingameY },
+      {
+        onStarted: () => toast.add({ severity: 'info', summary: 'Automation started',
+          detail: `${markerDisplayName(mk)} — Press Esc to cancel.`, life: 5000 }),
+      },
+    )
+    if (status !== 'completed') {
+      toast.add({ severity: status === 'cancelled' ? 'warn' : 'error',
+        summary: status === 'cancelled' ? 'Automation cancelled' : 'Automation failed',
         detail: server.gameMarker?.message || '', life: 5000 })
     }
   } finally {
@@ -174,22 +162,66 @@ async function markInGame() {
   }
 }
 
-async function waitForGameMarkerDone(): Promise<string> {
-  const TERMINAL = new Set(['completed', 'cancelled', 'error'])
-  for (;;) {
-    const s = server.gameMarker
-    if (s && !s.active && TERMINAL.has(s.status)) return s.status
-    if (s && !s.active) {
-      await server.pollGameMarker()
-      const f = server.gameMarker
-      if (f && TERMINAL.has(f.status)) return f.status
+// ── Mark queue (lote) ─────────────────────────────────────────────────────
+const batchActionCount = computed(() => server.pendingBatchCount + mapStore.selectionCount)
+
+const batchButtonText = computed(() => {
+  if (server.batchRunning) {
+    const current = Math.min(server.batchCurrentIndex + 1, server.batchTotal)
+    return `Processing ${current} of ${server.batchTotal}…`
+  }
+  return batchActionCount.value > 0
+    ? `Mark all in game (${batchActionCount.value})`
+    : 'Mark all in game'
+})
+
+async function markAllInGame() {
+  if (server.batchRunning || markInGameRunning.value) return
+  if (batchActionCount.value === 0) return
+  if (!server.online) {
+    window.location.href = 'palchecklist://start'
+    toast.add({ severity: 'info', summary: 'Starting local helper',
+      detail: 'Keep the Palworld map open, then try again.', life: 4000 })
+    return
+  }
+  // Seleção atual entra na fila (validação de zona homogênea dentro do store)
+  if (mapStore.selectionCount > 0) {
+    const drafts = mapStore.selectionMarkers.map((mk) => ({
+      id: mk.id,
+      zone: mapStore.activeZone,
+      type: mk.type,
+      subtype: mk.subtype ?? null,
+      name: markerDisplayName(mk),
+      x: mk.ingameX,
+      y: mk.ingameY,
+    }))
+    const result = server.enqueueBatch(drafts)
+    if (result === 'mixed-zone') {
+      toast.add({ severity: 'warn', summary: 'Mixed map zones',
+        detail: 'The queue already has markers from another map zone — clear the queue first.',
+        life: 4500 })
+      return
     }
-    await delay(150)
+    if (result === 'running') return
+    mapStore.clearBatchSelection()
+  }
+  const summary = await server.startBatchMark()
+  if (summary.cancelled) {
+    toast.add({ severity: 'warn', summary: 'Batch cancelled',
+      detail: `${summary.completed} marker(s) marked. Remaining items stay in the queue.`,
+      life: 4500 })
+  } else if (summary.failed > 0) {
+    toast.add({ severity: 'error', summary: 'Batch stopped on failure',
+      detail: `${summary.completed} completed, ${summary.failed} failed. Remaining items stay in the queue.`,
+      life: 5000 })
+  } else if (summary.completed > 0) {
+    toast.add({ severity: 'success', summary: 'Batch completed',
+      detail: `${summary.completed} marker(s) marked in game.`, life: 4000 })
   }
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise(r => window.setTimeout(r, ms))
+function flyToQueueItem(item: BatchQueueItem) {
+  leafletRef.value?.centerIngame(item.x, item.y)
 }
 
 // ── Mouse loop ────────────────────────────────────────────────────────────
@@ -482,6 +514,75 @@ async function toggleMouseLoop() {
             <div v-if="server.gameMarkerBusy" class="tools-status">
               {{ server.gameMarker?.message }}
               <button type="button" class="link-btn" @click="server.cancelGameMarker">Cancel</button>
+            </div>
+
+            <!-- Mark queue (batch) -->
+            <div class="tools-section-label">
+              Mark queue <span v-if="server.batchQueue.length">({{ server.batchQueue.length }})</span>
+            </div>
+            <div class="mark-queue">
+              <div v-if="server.batchQueue.length === 0" class="mark-queue__empty">
+                <em>Ctrl + Click markers to queue them</em>
+              </div>
+              <template v-else>
+                <ul class="mark-queue__list">
+                  <li
+                    v-for="item in server.batchQueue"
+                    :key="item.id"
+                    class="mark-queue__item"
+                    :class="{ 'mark-queue__item--current': item.status === 'processing' }"
+                    :title="item.error || item.name"
+                  >
+                    <span class="mark-queue__status" :data-status="item.status" />
+                    <button type="button" class="mark-queue__name" @click="flyToQueueItem(item)">
+                      {{ item.name }}
+                    </button>
+                    <span class="mark-queue__coords">{{ item.x }}, {{ item.y }}</span>
+                    <button
+                      v-if="!server.batchRunning"
+                      type="button"
+                      class="mark-queue__remove"
+                      aria-label="Remove from queue"
+                      @click="server.removeBatchItem(item.id)"
+                    >×</button>
+                  </li>
+                </ul>
+                <div class="mark-queue__footer">
+                  <button
+                    type="button"
+                    class="link-btn link-btn--muted"
+                    :disabled="server.batchRunning"
+                    @click="server.clearBatchQueue()"
+                  >Clear queue</button>
+                </div>
+              </template>
+              <div class="mark-queue__actions">
+                <button
+                  class="primary-btn"
+                  type="button"
+                  :disabled="batchActionCount === 0 || server.batchRunning || markInGameRunning || server.gameMarkerBusy"
+                  @click="markAllInGame"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                       fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polygon points="6 3 20 12 6 21 6 3"/>
+                  </svg>
+                  {{ batchButtonText }}
+                </button>
+                <button
+                  v-if="server.batchRunning"
+                  class="icon-btn icon-btn--danger"
+                  type="button"
+                  title="Cancel batch"
+                  aria-label="Cancel batch"
+                  @click="server.cancelBatchMark()"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                       fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect width="4" height="16" x="6" y="4"/><rect width="4" height="16" x="14" y="4"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </details>
@@ -920,6 +1021,109 @@ async function toggleMouseLoop() {
   cursor: pointer;
   padding: 0;
   text-decoration: underline;
+}
+.link-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.link-btn--muted { color: #7777aa; }
+.link-btn--muted:hover { color: #ccccee; }
+
+/* ── Mark queue (batch) ────────────────────────────────────────────────── */
+.mark-queue {
+  display: grid;
+  gap: 6px;
+}
+
+.mark-queue__empty {
+  font-size: 10px;
+  color: #555577;
+  padding: 2px 0;
+}
+
+.mark-queue__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.mark-queue__item {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: #1a1a2e;
+  border: 1px solid transparent;
+  font-size: 10px;
+}
+
+.mark-queue__item--current {
+  border-color: #6c5ce7;
+}
+
+.mark-queue__status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #55556e;
+  flex-shrink: 0;
+}
+.mark-queue__status[data-status='pending'] { background: #55556e; }
+.mark-queue__status[data-status='processing'] {
+  background: #38bdf8;
+  animation: mark-queue-pulse 1s ease-in-out infinite;
+}
+.mark-queue__status[data-status='completed'] { background: #34d399; }
+.mark-queue__status[data-status='failed'] { background: #f87171; }
+
+@keyframes mark-queue-pulse {
+  50% { opacity: 0.3; }
+}
+
+.mark-queue__name {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #ccccee;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mark-queue__name:hover { color: #e0e0f0; text-decoration: underline; }
+
+.mark-queue__coords {
+  color: #7777aa;
+  font-size: 9px;
+}
+
+.mark-queue__remove {
+  background: none;
+  border: none;
+  color: #7777aa;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.mark-queue__remove:hover { color: #f87171; }
+
+.mark-queue__actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.mark-queue__footer {
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* ── Footer ────────────────────────────────────────────────────────────── */

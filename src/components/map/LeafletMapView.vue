@@ -24,7 +24,7 @@ import {
   toGamePoint, toLatLng, getMapWindow,
 } from '@/domain/opggCoordinates'
 import { getMarkerHtml, clearMarkerHtmlCache } from '@/domain/opggMarkerIcons'
-import { markerDisplayName, markerTypeLabel } from '@/types/opggMarker'
+import { markerDisplayName } from '@/types/opggMarker'
 import type { Marker } from '@/types/opggMarker'
 import type { MapZone } from '@/stores/opggMap'
 import MarkerPopup from './MarkerPopup.vue'
@@ -128,10 +128,10 @@ function pixelSize(type: string): number {
   return mapStore.markerPixelSize(type)
 }
 
-function makeIcon(marker: Marker, checked: boolean): L.DivIcon {
+function makeIcon(marker: Marker, checked: boolean, selected = false): L.DivIcon {
   const size = pixelSize(marker.type)
   return L.divIcon({
-    html:       getMarkerHtml(marker, size, checked),
+    html:       getMarkerHtml(marker, size, checked, selected),
     className:  'palworld-map-marker',
     iconSize:   [size, size],
     iconAnchor: [size / 2, size / 2],
@@ -140,13 +140,21 @@ function makeIcon(marker: Marker, checked: boolean): L.DivIcon {
 
 function buildLeafletMarker(marker: Marker): L.Marker {
   const checked   = mapStore.isChecked(marker)
-  const lMarker   = L.marker([marker.lat, marker.lng], { icon: makeIcon(marker, checked) })
+  const selected  = mapStore.selectedMarkerIds.has(marker.id)
+  const lMarker   = L.marker([marker.lat, marker.lng], { icon: makeIcon(marker, checked, selected) })
   const size      = pixelSize(marker.type)
   const tipText   = `${markerDisplayName(marker)} · ${formatIngameCoords(marker.ingameX, marker.ingameY)}`
 
   lMarker.bindTooltip(tipText, { permanent: false, direction: 'top', offset: [0, -size / 2 - 4] })
   lMarker.on('click', (e: L.LeafletMouseEvent) => {
     L.DomEvent.stopPropagation(e)
+    // Ctrl/Cmd + Click → seleção múltipla para a fila de mark in game
+    if (e.originalEvent.ctrlKey || e.originalEvent.metaKey) {
+      mapStore.toggleBatchSelection(marker)
+      return
+    }
+    // Click simples: comportamento de sempre (popup) + limpa a multi-seleção
+    mapStore.clearBatchSelection()
     mapStore.selectMarker(marker)
     popupVisible.value = true
     if (mapContainer.value) {
@@ -310,6 +318,7 @@ function initMap() {
   mapInstance.on('click', () => {
     popupVisible.value = false
     mapStore.selectMarker(null)
+    mapStore.clearBatchSelection()
   })
 
   mapInstance.on('moveend zoomend', () => {
@@ -352,6 +361,27 @@ watch(() => mapStore.totalChecked, () => {
     lm.setIcon(makeIcon(marker, isNowChecked))
   }
 })
+
+// ── Seleção de lote: atualiza apenas os ícones cujo estado mudou ──────────
+function refreshSelectionIcons() {
+  for (const [id, lm] of leafletMarkers) {
+    const el = lm.getElement()
+    const isSelected = mapStore.selectedMarkerIds.has(id)
+    // DOM check — avoids setIcon when nothing changed
+    const wasSelected = el
+      ? el.querySelector('.palworld-map-marker-selected') !== null
+      : false
+    if (isSelected === wasSelected) continue
+    const marker = filteredMarkersById.get(id)  // O(1)
+    if (!marker) continue
+    lm.setIcon(makeIcon(marker, mapStore.isChecked(marker), isSelected))
+  }
+}
+
+watch(
+  () => [...mapStore.selectedMarkerIds].join(','),
+  () => { refreshSelectionIcons() },
+)
 
 // ── Swap tile layer on zone change ────────────────────────────────────────
 watch(() => props.mapZone, async (newZone) => {
@@ -531,5 +561,17 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 9999;
   pointer-events: auto;
+}
+
+/* Global: anel de seleção para a fila de mark in game (Ctrl/Cmd + Click).
+   Usa ::after no wrapper para não brigar com o box-shadow inline do ícone. */
+.palworld-map-marker-selected::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border: 2px solid #7c5cff;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(124, 92, 255, 0.65);
+  pointer-events: none;
 }
 </style>

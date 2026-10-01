@@ -139,6 +139,13 @@ export const useOpggMapStore = defineStore('opggMap', () => {
   /** Currently shown in popup */
   const selectedMarker = ref<Marker | null>(null)
 
+  /**
+   * Ids dos markers selecionados para a fila de "mark in game" (Ctrl/Cmd + Click).
+   * O Set preserva a ordem de clique = ordem de execução da fila.
+   * Vive em paralelo a selectedMarker (popup/HUD) para não afetar os fluxos existentes.
+   */
+  const selectedMarkerIds = reactive(new Set<string>())
+
   /** Camera state, persisted in localStorage */
   const cameraState = ref<MapCameraState | null>(loadCameraState())
 
@@ -190,6 +197,7 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     if (zone === activeZone.value && rawMarkers.value.length > 0) return
     activeZone.value = zone
     selectedMarker.value = null
+    selectedMarkerIds.clear()
     await loadZone(zone)
   }
 
@@ -340,6 +348,37 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     selectedMarker.value = marker
   }
 
+  // ── Seleção múltipla (fila de mark in game) ───────────────────────────────
+
+  /** Ctrl/Cmd + Click: adiciona/remove o marker da seleção do lote */
+  function toggleBatchSelection(marker: Marker): boolean {
+    if (selectedMarkerIds.has(marker.id)) {
+      selectedMarkerIds.delete(marker.id)
+      return false
+    }
+    selectedMarkerIds.add(marker.id)
+    return true
+  }
+
+  function clearBatchSelection(): void {
+    selectedMarkerIds.clear()
+  }
+
+  /** Resolve os ids selecionados contra os markers carregados, na ordem de clique */
+  const selectionMarkers = computed<Marker[]>(() => {
+    if (selectedMarkerIds.size === 0) return []
+    const byId = new Map<string, Marker>()
+    for (const m of rawMarkers.value) byId.set(m.id, m)
+    const out: Marker[] = []
+    for (const id of selectedMarkerIds) {
+      const mk = byId.get(id)
+      if (mk) out.push(mk)
+    }
+    return out
+  })
+
+  const selectionCount = computed(() => selectedMarkerIds.size)
+
   // ── Camera ───────────────────────────────────────────────────────────────
 
   function updateCamera(state: MapCameraState): void {
@@ -372,6 +411,7 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     markerSize,
     search,
     selectedMarker,
+    selectedMarkerIds,
     cameraState,
 
     // Actions
@@ -389,11 +429,15 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     isChecked,
     checkedCountForType,
     selectMarker,
+    toggleBatchSelection,
+    clearBatchSelection,
     updateCamera,
     markerPixelSize,
 
     // Computed
     filteredMarkers,
+    selectionMarkers,
+    selectionCount,
     typesByGroup,
     countsByType,
     totalChecked,

@@ -18,8 +18,8 @@ const EFFIGY_ICONS: Record<string, string> = {
   Monkey:        '/opgg-icons/effigies/tanzee.webp',
   NegativeKoala: '/opgg-icons/effigies/depresso.webp',
   PinkCat:       '/opgg-icons/effigies/cattiva.webp',
-  LazyDragon:    '/opgg-icons/effigies/lunaris.webp',
-  Mutant:        '/opgg-icons/effigies/relaxaurus.webp',
+  LazyDragon:    '/opgg-icons/effigies/relaxaurus.webp',
+  Mutant:        '/opgg-icons/effigies/lunaris.webp',
   GuardianDog:   '/opgg-icons/effigies/yakumo.webp',
 }
 
@@ -114,12 +114,12 @@ export function getMarkerBgColor(marker: Marker): string {
 
 // ── HTML cache (Fix 6) ────────────────────────────────────────────────────
 //
-// Markers of the same type + subtype + pixelSize + checked state always
-// produce identical HTML. Caching avoids ~16 000 string allocations on
+// Markers of the same type + subtype + pixelSize + checked + selected state
+// always produce identical HTML. Caching avoids ~16 000 string allocations on
 // every refreshMarkerIcons call and lets buildLeafletMarker reuse results
 // on filter changes where the same marker reappears.
 //
-// Key: "{type}:{subtype}:{pixelSize}:{checked 0|1}:{level}"
+// Key: "{type}:{subtype}:{pixelSize}:{checked 0|1}:{selected 0|1}:{level}"
 // The level is included because FieldBoss/BossTower embed it in the badge.
 
 const _htmlCache = new Map<string, string>()
@@ -135,10 +135,11 @@ export function getMarkerHtml(
   marker: Marker,
   pixelSize: number,
   checked: boolean,
+  selected = false,
 ): string {
   const level   = typeof marker.extra?.level === 'number' ? marker.extra.level : null
   // Cache key encodes every dimension that affects the output HTML.
-  const cacheKey = `${marker.type}:${marker.subtype ?? ''}:${pixelSize}:${checked ? 1 : 0}:${level ?? ''}`
+  const cacheKey = `${marker.type}:${marker.subtype ?? ''}:${pixelSize}:${checked ? 1 : 0}:${selected ? 1 : 0}:${level ?? ''}`
 
   const cached = _htmlCache.get(cacheKey)
   if (cached !== undefined) return cached
@@ -163,13 +164,14 @@ export function getMarkerHtml(
     iconUrl ? `background-image:url('${iconUrl.replace(/'/g, '%27')}')` : '',
   ].filter(Boolean).join(';')
 
-  const checkedClass = checked ? ' palworld-map-marker-checked' : ''
-  const lgClass      = isLarge ? ' palworld-map-marker-lg' : ''
+  const checkedClass  = checked ? ' palworld-map-marker-checked' : ''
+  const selectedClass = selected ? ' palworld-map-marker-selected' : ''
+  const lgClass       = isLarge ? ' palworld-map-marker-lg' : ''
   const badge        = level != null && (marker.type === 'FieldBoss' || marker.type === 'BossTower')
     ? `<span class="palworld-map-marker-badge">${level}</span>`
     : ''
 
-  const html = `<div class="palworld-map-marker-wrapper${checkedClass}${lgClass}" style="position:relative;display:inline-block;line-height:0"><span aria-hidden="true" class="palworld-map-marker-image palworld-map-image-silhouette" style="${imageStyle}"></span>${badge}</div>`
+  const html = `<div class="palworld-map-marker-wrapper${checkedClass}${selectedClass}${lgClass}" style="position:relative;display:inline-block;line-height:0"><span aria-hidden="true" class="palworld-map-marker-image palworld-map-image-silhouette" style="${imageStyle}"></span>${badge}</div>`
 
   _htmlCache.set(cacheKey, html)
   return html

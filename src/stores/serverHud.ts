@@ -1,9 +1,44 @@
 import { defineStore } from 'pinia'
 import { computed, onScopeDispose, ref } from 'vue'
+import { z } from 'zod'
 
 import { api } from '@/services/api'
+import {
+  batchQueueItemSchema,
+  type BatchEnqueueResult,
+  type BatchQueueDraft,
+  type BatchQueueItem,
+  type BatchRunSummary,
+} from '@/types/batch'
 import type { CoordinateItem } from '@/types/data'
 import type { GameMarkerState, HealthState, MouseLoopState } from '@/types/server'
+
+// ── Fila de "Mark in game" em lote ─────────────────────────────────────────────
+
+const BATCH_QUEUE_KEY = 'palworld:map:mark-queue'
+const MARK_MAX_RETRIES = 3
+const MARK_RETRY_DELAY_MS = 800
+/** Segurança contra travamento: automação que nunca chega a um status terminal */
+const MARK_WAIT_TIMEOUT_MS = 180_000
+const TERMINAL_GAME_MARKER_STATUSES = new Set(['completed', 'cancelled', 'error'])
+
+function loadBatchQueue(): BatchQueueItem[] {
+  try {
+    const raw = localStorage.getItem(BATCH_QUEUE_KEY)
+    if (!raw) return []
+    const parsed = z.array(batchQueueItemSchema).parse(JSON.parse(raw))
+    // Estado transiente nunca é restaurado: item interrompido volta para a fila
+    return parsed.map((item) =>
+      item.status === 'processing' ? { ...item, status: 'pending' } : item,
+    )
+  } catch {
+    return []
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
 
 export const useServerHudStore = defineStore('serverHud', () => {
   const health = ref<HealthState | null>(null)
@@ -21,6 +56,18 @@ export const useServerHudStore = defineStore('serverHud', () => {
   const online = computed(() => health.value?.ok === true)
   const gameMarkerBusy = computed(() => gameMarker.value?.active === true)
   const mouseLoopBusy = computed(() => mouseLoop.value?.active === true)
+
+  // ── Fila de marcação em lote ──────────────────────────────────────────────────
+  const batchQueue = ref<BatchQueueItem[]>(loadBatchQueue())
+  const batchRunning = ref(false)
+  const batchCurrentIndex = ref(-1)
+  const batchTotal = ref(0)
+  let batchCancelRequested = false
+
+  /** Itens que ainda serão executados (pending/failed/processing) */
+  const pendingBatchCount = computed(
+    () => batchQueue.value.filter((item) => item.status !== 'completed').length,
+  )
 
   async function refreshHealth(): Promise<void> {
     if (checking.value) return
@@ -107,6 +154,145 @@ export const useServerHudStore = defineStore('serverHud', () => {
     }
   }
 
+  /** Aguarda a automação atual chegar a um status terminal (poll do /game-marker/state). */
+  async function waitForGameMarkerDone(): Promise<string> {
+    const deadline = Date.now() + MARK_WAIT_TIMEOUT_MS
+    for (;;) {
+      const state = gameMarker.value
+      if (state && !state.active && TERMINAL_GAME_MARKER_STATUSES.has(state.status)) {
+        return state.status
+      }
+      if (state && !state.active) {
+        await pollGameMarker()
+        const fresh = gameMarker.value
+        if (fresh && TERMINAL_GAME_MARKER_STATUSES.has(fresh.status)) return fresh.status
+      }
+      if (Date.now() > deadline) return 'error'
+      await delay(150)
+    }
+  }
+
+  /**
+   * Executa a automação de mark para um único alvo, com retries.
+   * Reutilizada pelo fluxo single (MapView) e pelo lote (startBatchMark).
+   */
+  async function runSingleMark(
+    item: { id: string; x: number; y: number },
+    options: { maxRetries?: number; onStarted?: () => void } = {},
+  ): Promise<'completed' | 'cancelled' | 'error'> {
+    const maxRetries = options.maxRetries ?? MARK_MAX_RETRIES
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await startGameMarker(item)
+      } catch {
+        // Falha ao iniciar (ocupado/offline) — nova tentativa após um intervalo
+        if (attempt === maxRetries) return 'error'
+        await delay(MARK_RETRY_DELAY_MS)
+        continue
+      }
+      options.onStarted?.()
+      const status = await waitForGameMarkerDone()
+      if (status === 'completed' || status === 'cancelled') return status
+      if (attempt < maxRetries) await delay(MARK_RETRY_DELAY_MS)
+    }
+    return 'error'
+  }
+
+  function persistBatchQueue(): void {
+    try {
+      localStorage.setItem(BATCH_QUEUE_KEY, JSON.stringify(batchQueue.value))
+    } catch {
+      // storage indisponível — a fila simplesmente não persiste nesta sessão
+    }
+  }
+
+  /** Adiciona itens à fila. A fila nunca mistura zonas de mapa. */
+  function enqueueBatch(drafts: BatchQueueDraft[]): BatchEnqueueResult {
+    if (batchRunning.value) return 'running'
+    if (drafts.length === 0) return 'ok'
+    const zone = drafts[0]!.zone
+    if (drafts.some((draft) => draft.zone !== zone)) return 'mixed-zone'
+    if (batchQueue.value.some((item) => item.zone !== zone)) return 'mixed-zone'
+    batchQueue.value.push(...drafts.map((draft) => ({ ...draft, status: 'pending' as const })))
+    persistBatchQueue()
+    return 'ok'
+  }
+
+  function removeBatchItem(id: string): void {
+    if (batchRunning.value) return
+    batchQueue.value = batchQueue.value.filter((item) => item.id !== id)
+    persistBatchQueue()
+  }
+
+  function clearBatchQueue(): void {
+    if (batchRunning.value) return
+    batchQueue.value = []
+    batchCurrentIndex.value = -1
+    batchTotal.value = 0
+    persistBatchQueue()
+  }
+
+  /** Cancela o item em execução e interrompe o lote; o item volta para a fila. */
+  async function cancelBatchMark(): Promise<void> {
+    batchCancelRequested = true
+    try {
+      await cancelGameMarker()
+    } catch {
+      // waitForGameMarkerDone detectará o terminal (ou estourará o timeout)
+    }
+  }
+
+  /**
+   * Executa a fila sequencialmente: cada item pending/failed roda via
+   * runSingleMark; no primeiro erro o lote para e o restante fica pending.
+   * Itens completed são pulados (re-run = refazer o que falta).
+   */
+  async function startBatchMark(): Promise<BatchRunSummary> {
+    if (batchRunning.value) return { completed: 0, failed: 0, cancelled: true }
+    const runnable = batchQueue.value.filter((item) => item.status !== 'completed')
+    if (runnable.length === 0) return { completed: 0, failed: 0, cancelled: false }
+
+    batchRunning.value = true
+    batchCancelRequested = false
+    batchTotal.value = runnable.length
+    batchCurrentIndex.value = -1
+    let completed = 0
+    let failed = 0
+    let cancelled = false
+
+    try {
+      for (const item of batchQueue.value) {
+        if (item.status === 'completed') continue
+        if (batchCancelRequested) break
+        batchCurrentIndex.value++
+        item.status = 'processing'
+        delete item.error
+        persistBatchQueue()
+
+        const status = await runSingleMark({ id: item.id, x: item.x, y: item.y })
+        if (status === 'completed') {
+          item.status = 'completed'
+          completed++
+        } else if (status === 'cancelled' || batchCancelRequested) {
+          item.status = 'pending'
+          cancelled = true
+          break
+        } else {
+          item.status = 'failed'
+          item.error = gameMarker.value?.error || gameMarker.value?.message || 'Automation failed'
+          failed++
+          break
+        }
+        persistBatchQueue()
+      }
+    } finally {
+      batchRunning.value = false
+      batchCurrentIndex.value = -1
+      persistBatchQueue()
+    }
+    return { completed, failed, cancelled }
+  }
+
   async function startMouseLoop(intervalSeconds: number): Promise<void> {
     error.value = ''
     try {
@@ -182,6 +368,11 @@ export const useServerHudStore = defineStore('serverHud', () => {
     mouseLoop,
     mouseLoopBusy,
     error,
+    batchQueue,
+    batchRunning,
+    batchCurrentIndex,
+    batchTotal,
+    pendingBatchCount,
     startMonitoring,
     stopMonitoring,
     refreshHealth,
@@ -194,5 +385,12 @@ export const useServerHudStore = defineStore('serverHud', () => {
     startMouseLoop,
     stopMouseLoop,
     pollMouseLoop,
+    waitForGameMarkerDone,
+    runSingleMark,
+    enqueueBatch,
+    removeBatchItem,
+    clearBatchQueue,
+    cancelBatchMark,
+    startBatchMark,
   }
 })

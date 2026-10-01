@@ -95,8 +95,8 @@ export function markerTypeLabel(type: string, subtype?: string | null): string {
     Monkey:        'Tanzee Effigy',
     NegativeKoala: 'Depresso Effigy',
     PinkCat:       'Cattiva Effigy',
-    LazyDragon:    'Lunaris Effigy',
-    Mutant:        'Relaxaurus Effigy',
+    LazyDragon:    'Relaxaurus Effigy',
+    Mutant:        'Lunaris Effigy',
     GuardianDog:   'Yakumo Effigy',
   }
   const eggLabels: Record<string, string> = {
