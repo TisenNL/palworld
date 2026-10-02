@@ -68,7 +68,8 @@ so it sees no files and always exits 0. The `typecheck` script passes `-p tsconf
 `public/` holds ~1550 tracked files, many multi-MB generated artifacts:
 `opgg-markers-palpagos.json` (3.4 MB), `opgg-data/points.json` (raw op.gg, UE5 cm),
 `opgg-map-tiles/`, `data.json`, `breed.json`, `wt-data.json`, `map_icons.json`.Regeneration chain: `py -3 download_opgg_data.py` → `node scripts/rename_opgg_tiles.mjs` /
-`node scripts/convert_opgg_points.mjs`.
+`node scripts/convert_opgg_points.mjs`. Regenerate Pal and human habitat catalog/points with
+`py -3 scripts/download_opgg_spawn_locations.py`.
 
 `convert_opgg_points.mjs` guarantees **unique** marker ids (`{type}:{lat}:{lng}` plus `#n` on
 collision). The renderer dedupes by `id`, so a collision silently drops markers (sidebar counts stop

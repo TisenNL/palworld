@@ -14,6 +14,7 @@ import { getFilterIconUrl } from '@/domain/opggMarkerIcons'
 import { toGamePoint, toLatLng, getMapWindow, type MapZone } from '@/domain/opggCoordinates'
 import { markerDisplayName, markerFilterLabel, GROUPS, GROUP_LABELS } from '@/types/opggMarker'
 import type { BatchQueueItem } from '@/types/batch'
+import type { SpawnLocationOption } from '@/types/spawnLocation'
 
 interface LeafletExposed {
   zoomIn: () => void
@@ -33,6 +34,9 @@ const coordsText        = ref('X / Y')
 const searchInput       = ref('')
 const mouseLoopSeconds  = ref(40)
 const markInGameRunning = ref(false)
+const spawnLocationsExpanded = ref(true)
+const spawnTab = ref<'pals' | 'humans'>('pals')
+const spawnSearch = ref('')
 
 let searchTimer: number | undefined
 
@@ -74,6 +78,34 @@ function isTypeActive(type: string): boolean {
 function filterIconStyle(filterKey: string): Record<string, string> {
   const iconUrl = getFilterIconUrl(filterKey)
   return iconUrl ? { backgroundImage: `url('${iconUrl}')` } : {}
+}
+
+const spawnMapKey = computed(() => (mapStore.activeZone === 'world-tree' ? 'tree' : 'world'))
+const spawnOptions = computed(() => {
+  const options = mapStore.spawnCatalog?.[spawnTab.value] ?? []
+  const query = spawnSearch.value.trim().toLowerCase()
+  return options.filter(
+    (option) =>
+      option.mapKeys.includes(spawnMapKey.value) &&
+      (!query || option.name.toLowerCase().includes(query)),
+  )
+})
+
+function spawnOptionImage(option: SpawnLocationOption): string {
+  const imageId = spawnTab.value === 'pals' ? option.id : (option.iconId ?? option.id)
+  const imageType = spawnTab.value === 'pals' ? 'pals' : 'icons'
+  return `https://s-stats-platform-cdn.op.gg/palworld/images/${imageType}/${encodeURIComponent(imageId)}.png`
+}
+
+function onSpawnImageError(event: Event): void {
+  const image = event.currentTarget
+  if (!(image instanceof HTMLImageElement)) return
+  const fallback = image.dataset.fallback
+  if (fallback) image.src = fallback
+}
+
+function selectSpawnLocation(option: SpawnLocationOption): void {
+  void mapStore.toggleSpawnLocation(spawnTab.value, option.id)
 }
 
 // ── Zone switch ───────────────────────────────────────────────────────────
@@ -345,6 +377,125 @@ async function toggleMouseLoop() {
 
         <!-- Category groups -->
         <template v-else>
+          <section class="filter-group map-locations-group">
+            <div class="filter-group__header">
+              <button
+                class="filter-group__toggle"
+                type="button"
+                :aria-expanded="spawnLocationsExpanded"
+                @click="spawnLocationsExpanded = !spawnLocationsExpanded"
+              >
+                <svg
+                  class="filter-group__chevron"
+                  :class="{ 'filter-group__chevron--open': spawnLocationsExpanded }"
+                  xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6"/>
+                </svg>
+                Map Locations
+                <span v-if="mapStore.selectedSpawnLocation" class="filter-group__progress">
+                  {{ mapStore.spawnPoints.length }} points
+                </span>
+              </button>
+            </div>
+
+            <div v-if="spawnLocationsExpanded" class="map-locations__body">
+              <div class="map-locations__tabs" role="tablist" aria-label="Map locations">
+                <button
+                  type="button"
+                  role="tab"
+                  :aria-selected="spawnTab === 'pals'"
+                  :class="{ 'map-locations__tab--active': spawnTab === 'pals' }"
+                  @click="spawnTab = 'pals'; spawnSearch = ''"
+                >
+                  Pal Locations
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  :aria-selected="spawnTab === 'humans'"
+                  :class="{ 'map-locations__tab--active': spawnTab === 'humans' }"
+                  @click="spawnTab = 'humans'; spawnSearch = ''"
+                >
+                  Human Locations
+                </button>
+              </div>
+
+              <input
+                v-model="spawnSearch"
+                type="search"
+                class="map-locations__search"
+                :placeholder="spawnTab === 'pals' ? 'Search Pals by name' : 'Search humans by name'"
+                :aria-label="spawnTab === 'pals' ? 'Search Pals by name' : 'Search humans by name'"
+              />
+
+              <div
+                v-if="mapStore.spawnCatalogLoading"
+                class="map-locations__status"
+                role="status"
+              >
+                Loading locations…
+              </div>
+              <div
+                v-else-if="mapStore.spawnCatalogError"
+                class="map-locations__status map-locations__status--error"
+                role="alert"
+              >
+                {{ mapStore.spawnCatalogError }}
+                <button type="button" @click="mapStore.loadSpawnCatalog()">Retry</button>
+              </div>
+              <div
+                v-else-if="mapStore.spawnLocationLoading"
+                class="map-locations__status"
+                role="status"
+              >
+                Loading spawn points…
+              </div>
+              <div
+                v-if="mapStore.spawnLocationError"
+                class="map-locations__status map-locations__status--error"
+                role="alert"
+              >
+                {{ mapStore.spawnLocationError }}
+              </div>
+
+              <ul v-if="!mapStore.spawnCatalogError" class="spawn-location-grid">
+                <li v-for="option in spawnOptions" :key="option.id">
+                  <button
+                    type="button"
+                    class="spawn-location-card"
+                    :class="{
+                      'spawn-location-card--active':
+                        mapStore.selectedSpawnLocation?.kind === spawnTab &&
+                        mapStore.selectedSpawnLocation.id === option.id,
+                    }"
+                    :aria-pressed="
+                      mapStore.selectedSpawnLocation?.kind === spawnTab &&
+                      mapStore.selectedSpawnLocation.id === option.id
+                    "
+                    :title="option.name"
+                    @click="selectSpawnLocation(option)"
+                  >
+                    <img
+                      :src="spawnOptionImage(option)"
+                      :data-fallback="spawnTab === 'pals'
+                        ? '/opgg-icons/markers/field-boss.webp'
+                        : '/opgg-icons/resources/human.webp'"
+                      :alt="option.name"
+                      loading="lazy"
+                      decoding="async"
+                      @error="onSpawnImageError"
+                    />
+                    <span>{{ option.name }}</span>
+                  </button>
+                </li>
+                <li v-if="spawnOptions.length === 0" class="spawn-location-grid__empty">
+                  No locations found.
+                </li>
+              </ul>
+            </div>
+          </section>
+
           <div
             v-for="group in GROUPS"
             :key="group"
@@ -771,6 +922,145 @@ async function toggleMouseLoop() {
 /* ── Filter groups ─────────────────────────────────────────────────────── */
 .filter-group {
   border-bottom: 1px solid #1e1e2e;
+}
+
+.map-locations__body {
+  display: grid;
+  gap: 8px;
+  padding: 4px 10px 10px;
+}
+
+.map-locations__tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid #3c3c4d;
+  border-radius: 8px;
+  background: #151522;
+}
+
+.map-locations__tabs button {
+  min-width: 0;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #9999bb;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.map-locations__tabs button:hover {
+  color: #e0e0f0;
+}
+
+.map-locations__tabs .map-locations__tab--active {
+  background: #6c5ce7;
+  color: #fff;
+}
+
+.map-locations__search {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid #3c3c4d;
+  border-radius: 6px;
+  outline: none;
+  background: #1a1a2e;
+  color: #e6e6ff;
+  font-size: 10px;
+}
+
+.map-locations__search:focus {
+  border-color: #6c5ce7;
+}
+
+.map-locations__status {
+  color: #9999bb;
+  font-size: 10px;
+}
+
+.map-locations__status--error {
+  color: #f87171;
+  overflow-wrap: anywhere;
+}
+
+.map-locations__status--error button {
+  margin-left: 6px;
+  border: 0;
+  background: none;
+  color: #c4b5fd;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.spawn-location-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  max-height: 270px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: #3c3c4d transparent;
+}
+
+.spawn-location-card {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 70px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #222228b3;
+  color: #9999bb;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.spawn-location-card:hover {
+  border-color: #4a4a5a;
+  color: #fff;
+}
+
+.spawn-location-card--active {
+  border-color: #8b7cf6;
+  background: #6c5ce733;
+  color: #fff;
+}
+
+.spawn-location-card img {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  object-fit: contain;
+  background: #17171b;
+}
+
+.spawn-location-card span {
+  width: 100%;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spawn-location-grid__empty {
+  grid-column: 1 / -1;
+  padding: 8px 4px;
+  color: #7777aa;
+  font-size: 10px;
+  text-align: center;
 }
 
 .filter-group__header {

@@ -65,6 +65,8 @@ interface SmoothZoomMap extends L.Map {
 
 // LayerGroup per marker type for efficient show/hide
 const layerGroups    = new Map<string, L.LayerGroup>()
+const spawnLocationLayer = L.layerGroup()
+let spawnLocationRenderer: L.Canvas | null = null
 // id → L.Marker  (primary DOM lookup)
 const leafletMarkers = new Map<string, L.Marker>()
 // Fix 1 — id → Marker object for O(1) access in refreshMarkerIcons/checked watch
@@ -306,6 +308,26 @@ function syncMarkers(): void {
   scheduleChunk(addChunk)
 }
 
+function syncSpawnLocations(): void {
+  if (!mapInstance || !spawnLocationRenderer) return
+  spawnLocationLayer.clearLayers()
+  const mapWindow = getMapWindow(props.mapZone)
+  for (const point of mapStore.spawnPoints) {
+    const [lat, lng] = toLatLng(mapWindow, point.gameX, point.gameY)
+    const fillColor =
+      point.day && point.night ? '#a78bfa' : point.day ? '#facc15' : '#818cf8'
+    L.circleMarker([lat, lng], {
+      renderer: spawnLocationRenderer,
+      radius: 6,
+      weight: 1.5,
+      color: '#17171b',
+      fillColor,
+      fillOpacity: 0.95,
+      interactive: false,
+    }).addTo(spawnLocationLayer)
+  }
+}
+
 // ── Fix 2 — chunked initial load to avoid blocking the main thread ────────
 const CHUNK_SIZE = 300
 
@@ -345,6 +367,8 @@ function initMap() {
     maxBounds:         MAP_BOUNDS,
     maxBoundsViscosity: 0.8,
   })
+  spawnLocationRenderer = L.canvas({ padding: 0.5 })
+  spawnLocationLayer.addTo(mapInstance)
 
   tileLayer = L.tileLayer(tileUrl(props.mapZone), {
     tileSize:          256,
@@ -385,6 +409,7 @@ function initMap() {
   })
 
   updateZoomPercent(zoom)
+  syncSpawnLocations()
   // Fix 2 — use chunked loader on initial mount to avoid blocking the UI
   void nextTick(syncMarkers)
   emit('mapReady')
@@ -392,6 +417,7 @@ function initMap() {
 
 // ── Watch: filter changes — diff sync (fast for small deltas) ────────────
 watch(() => mapStore.filteredMarkers, () => { syncMarkers() }, { deep: false })
+watch(() => mapStore.spawnPoints, syncSpawnLocations, { deep: false })
 
 // ── Fix 5 — debounce markerSize watch so slider drags don't thrash ────────
 let sizeDebounceTimer: ReturnType<typeof setTimeout> | undefined
@@ -472,6 +498,7 @@ watch(() => props.mapZone, async (newZone) => {
     mapInstance.setView([-(WORLD_SIZE / 2), WORLD_SIZE / 2], 2, { animate: false })
   }
   updateZoomPercent(mapInstance.getZoom())
+  syncSpawnLocations()
 
   await nextTick()
   // Fix 2 — chunked load also on zone switch (new zone may have many markers)
@@ -529,6 +556,7 @@ onBeforeUnmount(() => {
   selectionRectangle = null
   selectionStart = null
   for (const lg of layerGroups.values()) lg.clearLayers()
+  spawnLocationLayer.clearLayers()
   layerGroups.clear()
   leafletMarkers.clear()
   filteredMarkersById.clear()

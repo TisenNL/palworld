@@ -73,6 +73,16 @@ Generates:
 - `public/opgg-markers-worldtree.json` — ~370 markers for World Tree
 - `public/opgg-marker-counts.json` — counts per type and zone
 
+### Pal and Human Locations
+
+```bash
+py -3 scripts/download_opgg_spawn_locations.py
+```
+
+Downloads the Pal and human location catalog and compact day/night spawn points to
+`public/opgg-spawn-locations/`. Spawn point files are loaded on demand when selecting a Pal or
+human in the map sidebar.
+
 ---
 
 ## Project Structure

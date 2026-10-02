@@ -123,4 +123,82 @@ describe('opggMap multi-select (batch mark queue)', () => {
 
     expect(store.selectionCount).toBe(0)
   })
+
+  it('applies All and group Hide to marker types across both maps', async () => {
+    const palMarker = makeMarker({ type: 'FieldBoss', group: 'enemies' })
+    const treeMarker = makeMarker({
+      id: 'BossTower:2:2',
+      type: 'BossTower',
+      group: 'enemies',
+    })
+    const dataByPath = new Map<string, unknown>([
+      ['/opgg-markers-palpagos.json', [palMarker]],
+      ['/opgg-markers-worldtree.json', [treeMarker]],
+      ['/opgg-marker-counts.json', { palpagos: {}, worldtree: {} }],
+      ['/opgg-spawn-locations/catalog.json', { revision: 'test', pals: [], humans: [] }],
+    ])
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: string) =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(dataByPath.get(input)),
+        }),
+      ),
+    )
+    const store = useOpggMapStore()
+
+    await store.initialize()
+    store.setAllVisible(false)
+    expect(store.visibleTypes).toEqual(new Set(['FieldBoss', 'BossTower']))
+
+    store.resetFilters()
+    store.setGroupVisible('enemies', false)
+    expect(store.visibleTypes).toEqual(new Set(['FieldBoss', 'BossTower']))
+
+    await store.setZone('world-tree')
+    expect(store.isTypeVisible('FieldBoss')).toBe(false)
+  })
+
+  it('keeps selected Pal spawn points active when switching maps', async () => {
+    const dataByPath = new Map<string, unknown>([
+      ['/opgg-markers-palpagos.json', []],
+      ['/opgg-markers-worldtree.json', []],
+      ['/opgg-marker-counts.json', { palpagos: {}, worldtree: {} }],
+      ['/opgg-spawn-locations/catalog.json', { revision: 'test', pals: [], humans: [] }],
+      [
+        '/opgg-spawn-locations/pals/SheepBall.json',
+        {
+          day: [
+            [-460725, 72935],
+            [628791, -610720],
+          ],
+          night: [[-460725, 72935]],
+        },
+      ],
+    ])
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: string) =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(dataByPath.get(input)),
+        }),
+      ),
+    )
+    const store = useOpggMapStore()
+
+    await store.initialize()
+    await store.toggleSpawnLocation('pals', 'SheepBall')
+    expect(store.selectedSpawnLocation).toEqual({ kind: 'pals', id: 'SheepBall' })
+    expect(store.spawnPoints).toEqual([{ gameX: -460725, gameY: 72935, day: true, night: true }])
+
+    await store.setZone('world-tree')
+    expect(store.selectedSpawnLocation).toEqual({ kind: 'pals', id: 'SheepBall' })
+    expect(store.spawnPoints).toEqual([{ gameX: 628791, gameY: -610720, day: true, night: false }])
+
+    await store.toggleSpawnLocation('pals', 'SheepBall')
+    expect(store.selectedSpawnLocation).toBeNull()
+    expect(store.spawnPoints).toEqual([])
+  })
 })
