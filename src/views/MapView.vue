@@ -5,7 +5,7 @@
  * Mantém todas as integrações com o servidor helper Python.
  */
 import { useToast } from 'primevue/usetoast'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import LeafletMapView from '@/components/map/LeafletMapView.vue'
 import { useOpggMapStore } from '@/stores/opggMap'
@@ -45,6 +45,11 @@ onMounted(async () => {
   await mapStore.initialize()
   void server.pollGameMarker()
   void server.pollMouseLoop()
+  server.startPlayerPositionPolling()
+})
+
+onBeforeUnmount(() => {
+  server.stopPlayerPositionPolling()
 })
 
 // ── Search debounce ───────────────────────────────────────────────────────
@@ -57,6 +62,22 @@ watch(searchInput, (val) => {
 const markerSizeSliderStyle = computed(() => ({
   '--range-progress': `${mapStore.markerSize}%`,
 }))
+
+const playerPositionStatusText = computed(() => {
+  const status = server.playerPosition?.status
+  if (!status) return 'Checking player position…'
+  switch (status) {
+    case 'ready': return 'Live player position'
+    case 'not_running': return 'Palworld is not running'
+    case 'access_denied': return 'Player position access denied'
+    case 'unsupported': return 'Live position requires Windows'
+    case 'unsupported_build': return 'Palworld build not validated'
+    case 'waiting_for_overwolf': return 'Open the Palworld Overwolf app'
+    case 'invalid_position': return 'Player position needs revalidation'
+    case 'probe_error': return 'Player position unavailable'
+    default: return 'Player position unavailable'
+  }
+})
 
 const allMarkersVisible = computed(() => mapStore.visibleTypes.size === 0)
 
@@ -357,6 +378,15 @@ async function toggleMouseLoop() {
 
       <!-- Scrollable content -->
       <div class="map-sidebar__scroll">
+
+        <div
+          class="player-position-status"
+          :class="{ 'player-position-status--ready': server.playerPosition?.status === 'ready' }"
+          role="status"
+        >
+          <span class="player-position-status__dot" />
+          <span>{{ playerPositionStatusText }}</span>
+        </div>
 
         <!-- Search -->
         <div class="map-sidebar__search">
@@ -759,6 +789,7 @@ async function toggleMouseLoop() {
       <LeafletMapView
         ref="leafletRef"
         :map-zone="mapStore.activeZone"
+        :player-position="server.playerPosition?.position ?? null"
         @coords-update="coordsText = $event"
         @map-ready="() => {}"
       />
@@ -895,6 +926,32 @@ async function toggleMouseLoop() {
 
 .map-sidebar__search {
   padding: 0 10px 6px;
+}
+
+.player-position-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px 10px;
+  color: #8888aa;
+  font-size: 11px;
+}
+
+.player-position-status__dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+
+.player-position-status--ready {
+  color: #cbd5e1;
+}
+
+.player-position-status--ready .player-position-status__dot {
+  background: #22c55e;
+  box-shadow: 0 0 7px #22c55e88;
 }
 
 .map-search-input {

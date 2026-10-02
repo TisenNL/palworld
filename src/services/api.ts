@@ -17,10 +17,12 @@ import {
   healthSchema,
   mouseLoopStateSchema,
   ocrStateSchema,
+  playerPositionStateSchema,
   type GameMarkerState,
   type HealthState,
   type MouseLoopState,
   type OcrState,
+  type PlayerPositionState,
 } from '@/types/server'
 
 const configuredBase = String(import.meta.env.VITE_HELPER_URL ?? '').replace(/\/$/, '')
@@ -111,6 +113,8 @@ export const api = {
   },
   getGameMarkerState: (): Promise<GameMarkerState> =>
     json('/game-marker/state', gameMarkerStateSchema, { cache: 'no-store' }),
+  getPlayerPositionState: (): Promise<PlayerPositionState> =>
+    json('/player-position/state', playerPositionStateSchema, { cache: 'no-store' }),
   cancelGameMarker: async (): Promise<void> => {
     await request('/game-marker/cancel', { method: 'POST' })
   },

@@ -30,6 +30,7 @@ from .marker_timing import (
     current_ocr_context,
     record_ocr_meta,
 )
+from .player_position import read_palworld_position
 
 PORT = int(os.environ.get("PALWORLD_PORT", "8765"))
 VERSION = "tooltip-v20-game-marker"
@@ -1164,6 +1165,23 @@ class Handler(BaseHTTPRequestHandler):
         if not self._request_allowed():
             return
         parsed = urlparse(self.path)
+        if parsed.path == "/player-position/state":
+            try:
+                self._json(200, read_palworld_position())
+            except OSError as exc:
+                self._json(
+                    500,
+                    {
+                        "ok": False,
+                        "status": "probe_error",
+                        "processFound": False,
+                        "readAccess": False,
+                        "pid": None,
+                        "error": str(exc),
+                    },
+                )
+            return
+
         if parsed.path == "/game-marker/state":
             t0 = time.perf_counter()
             with game_marker_lock:

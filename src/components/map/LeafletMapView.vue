@@ -27,10 +27,12 @@ import {
 import { getMarkerHtml, clearMarkerHtmlCache } from '@/domain/opggMarkerIcons'
 import { markerDisplayName } from '@/types/opggMarker'
 import type { Marker } from '@/types/opggMarker'
+import type { PlayerPosition } from '@/types/server'
 import MarkerPopup from './MarkerPopup.vue'
 
 const props = defineProps<{
   mapZone: MapZone
+  playerPosition: PlayerPosition | null
 }>()
 
 const emit = defineEmits<{
@@ -49,6 +51,7 @@ const gotoValue    = ref('')
 
 let mapInstance: L.Map | null = null
 let tileLayer:   L.TileLayer | null = null
+let playerPositionMarker: L.Marker | null = null
 let selectionStart: L.Point | null = null
 let selectionRectangle: L.Rectangle | null = null
 let selectionMoved = false
@@ -328,6 +331,34 @@ function syncSpawnLocations(): void {
   }
 }
 
+function syncPlayerPosition(): void {
+  if (!mapInstance) return
+  const position = props.playerPosition
+  if (!position || position.mapZone !== props.mapZone) {
+    playerPositionMarker?.remove()
+    playerPositionMarker = null
+    return
+  }
+
+  const [lat, lng] = toLatLng(getMapWindow(props.mapZone), position.gameX, position.gameY)
+  if (playerPositionMarker) {
+    playerPositionMarker.setLatLng([lat, lng]).setZIndexOffset(1_000)
+    return
+  }
+  playerPositionMarker = L.marker([lat, lng], {
+    icon: L.divIcon({
+      className: 'palworld-player-location',
+      html: '<span aria-label="Player position" style="display:block;width:16px;height:16px;border:3px solid #fff;border-radius:50%;background:#2563eb;box-shadow:0 0 0 5px #2563eb66"></span>',
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+    }),
+    interactive: false,
+    keyboard: false,
+    zIndexOffset: 1_000,
+  })
+    .addTo(mapInstance)
+}
+
 // ── Fix 2 — chunked initial load to avoid blocking the main thread ────────
 const CHUNK_SIZE = 300
 
@@ -410,6 +441,7 @@ function initMap() {
 
   updateZoomPercent(zoom)
   syncSpawnLocations()
+  syncPlayerPosition()
   // Fix 2 — use chunked loader on initial mount to avoid blocking the UI
   void nextTick(syncMarkers)
   emit('mapReady')
@@ -418,6 +450,7 @@ function initMap() {
 // ── Watch: filter changes — diff sync (fast for small deltas) ────────────
 watch(() => mapStore.filteredMarkers, () => { syncMarkers() }, { deep: false })
 watch(() => mapStore.spawnPoints, syncSpawnLocations, { deep: false })
+watch([() => props.mapZone, () => props.playerPosition], syncPlayerPosition)
 
 // ── Fix 5 — debounce markerSize watch so slider drags don't thrash ────────
 let sizeDebounceTimer: ReturnType<typeof setTimeout> | undefined

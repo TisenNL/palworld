@@ -47,7 +47,36 @@ export const mouseLoopStateSchema = z.object({
   error: z.string().default(''),
 })
 
+export const playerPositionSchema = z.object({
+  gameX: z.number().finite(),
+  gameY: z.number().finite(),
+  gameZ: z.number().finite(),
+  mapZone: z.enum(['palpagos', 'world-tree']),
+  updatedAt: z.string(),
+})
+
+export const playerPositionStateSchema = z.object({
+  ok: z.boolean(),
+  status: z.enum([
+    'ready',
+    'not_running',
+    'access_denied',
+    'unsupported',
+    'unsupported_build',
+    'waiting_for_overwolf',
+    'invalid_position',
+    'probe_error',
+  ]),
+  processFound: z.boolean(),
+  readAccess: z.boolean(),
+  pid: z.number().int().nullable(),
+  position: playerPositionSchema.nullable(),
+  error: z.string(),
+})
+
 export type HealthState = z.infer<typeof healthSchema>
 export type OcrState = z.infer<typeof ocrStateSchema>
 export type GameMarkerState = z.infer<typeof gameMarkerStateSchema>
 export type MouseLoopState = z.infer<typeof mouseLoopStateSchema>
+export type PlayerPosition = z.infer<typeof playerPositionSchema>
+export type PlayerPositionState = z.infer<typeof playerPositionStateSchema>

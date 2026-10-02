@@ -22,7 +22,8 @@ so it sees no files and always exits 0. The `typecheck` script passes `-p tsconf
 - Unit tests: `npx vitest run tests/breeding.spec.ts` (happy-dom, globals on). Naming is mixed —
   `.spec.ts` *and* `.test.ts` are both collected. `tests/e2e/**` is excluded from vitest but **is**
   type-checked by `npm run typecheck` (`tsconfig.app.json` includes `tests/**/*.ts`).
-- Python tests: `py -3 -m unittest tests.test_game_marker_automation` (30 tests, single class).
+- Python tests: `py -3 -m unittest tests.test_game_marker_automation` (30 tests, single class);
+  player-position reader tests: `py -3 -m unittest tests.test_player_position`.
   Must run from repo root. No `pytest`, no `requirements.txt`.
 - Python deps are implicit: `Pillow` must be preinstalled (hard import); `rapidocr-onnxruntime` and
   `mss` are lazily imported and auto-piped by `run.py`. No `pyautogui` — input is raw `user32`.
@@ -44,6 +45,11 @@ so it sees no files and always exits 0. The `typecheck` script passes `-p tsconf
   (`server/coord_tooltip.py`) and never sends `Access-Control-Allow-Origin: *`. Without that any
   web page could drive the mouse/keyboard automation or read/write `/progress`. A new dev origin
   means editing that set.
+- Live player tracking (`server/player_position.py`) is read-only, requires the validated Palworld
+  executable SHA-256, and gets its initial actor address from the local Overwolf Palworld app log.
+  It follows only the validated actor-relative pointer chain; do not replace this with an
+  unrestricted process-memory scan. A game update must be revalidated before changing the build
+  fingerprint or offsets.
 - `src/domain/` is pure logic (no Vue/Pinia imports) — keep it that way; it's the only thing
   coverage measures (`src/domain/**` + `src/stores/**`).
 - Zod schemas live beside their types in `src/types/*.ts` and are the validation layer for all

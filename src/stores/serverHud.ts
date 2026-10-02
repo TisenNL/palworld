@@ -11,7 +11,12 @@ import {
   type BatchRunSummary,
 } from '@/types/batch'
 import type { CoordinateItem } from '@/types/data'
-import type { GameMarkerState, HealthState, MouseLoopState } from '@/types/server'
+import type {
+  GameMarkerState,
+  HealthState,
+  MouseLoopState,
+  PlayerPositionState,
+} from '@/types/server'
 
 // ── Fila de "Mark in game" em lote ─────────────────────────────────────────────
 
@@ -46,12 +51,16 @@ export const useServerHudStore = defineStore('serverHud', () => {
   const ocrBusy = ref(false)
   const gameMarker = ref<GameMarkerState | null>(null)
   const mouseLoop = ref<MouseLoopState | null>(null)
+  const playerPosition = ref<PlayerPositionState | null>(null)
   const error = ref('')
   let timer: number | undefined
   let gameMarkerTimer: number | undefined
   let mouseLoopTimer: number | undefined
+  let playerPositionTimer: number | undefined
   let pollingGameMarker = false
   let pollingMouseLoop = false
+  let pollingPlayerPosition = false
+  let playerPositionPollingEnabled = false
 
   const online = computed(() => health.value?.ok === true)
   const gameMarkerBusy = computed(() => gameMarker.value?.active === true)
@@ -101,6 +110,37 @@ export const useServerHudStore = defineStore('serverHud', () => {
   function stopMouseLoopPolling(): void {
     window.clearTimeout(mouseLoopTimer)
     mouseLoopTimer = undefined
+  }
+
+  async function pollPlayerPosition(): Promise<void> {
+    if (!playerPositionPollingEnabled || pollingPlayerPosition) return
+    pollingPlayerPosition = true
+    stopPlayerPositionPolling()
+    try {
+      playerPosition.value = await api.getPlayerPositionState()
+    } catch (cause) {
+      playerPosition.value = null
+      error.value = cause instanceof Error ? cause.message : 'Player position status failed'
+    } finally {
+      pollingPlayerPosition = false
+      if (playerPositionPollingEnabled) {
+        const delayMs =
+          playerPosition.value?.status === 'ready' ? 250 : 1_500
+        playerPositionTimer = window.setTimeout(() => void pollPlayerPosition(), delayMs)
+      }
+    }
+  }
+
+  function startPlayerPositionPolling(): void {
+    if (playerPositionPollingEnabled) return
+    playerPositionPollingEnabled = true
+    void pollPlayerPosition()
+  }
+
+  function stopPlayerPositionPolling(): void {
+    playerPositionPollingEnabled = false
+    window.clearTimeout(playerPositionTimer)
+    playerPositionTimer = undefined
   }
 
   async function pollGameMarker(): Promise<void> {
@@ -367,6 +407,7 @@ export const useServerHudStore = defineStore('serverHud', () => {
     stopMonitoring()
     stopGameMarkerPolling()
     stopMouseLoopPolling()
+    stopPlayerPositionPolling()
   })
 
   return {
@@ -378,6 +419,7 @@ export const useServerHudStore = defineStore('serverHud', () => {
     gameMarkerBusy,
     mouseLoop,
     mouseLoopBusy,
+    playerPosition,
     error,
     batchQueue,
     batchRunning,
@@ -396,6 +438,8 @@ export const useServerHudStore = defineStore('serverHud', () => {
     startMouseLoop,
     stopMouseLoop,
     pollMouseLoop,
+    startPlayerPositionPolling,
+    stopPlayerPositionPolling,
     waitForGameMarkerDone,
     runSingleMark,
     enqueueBatch,

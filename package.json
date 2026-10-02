@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "format": "prettier --write src tests *.config.ts package.json tsconfig*.json",
     "test": "vitest run",
-    "test:server": "py -3 -m unittest tests.test_game_marker_automation tests.test_progress_persistence",
+    "test:server": "py -3 -m unittest tests.test_game_marker_automation tests.test_progress_persistence tests.test_player_position",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "validate:images": "py -3 tools/validate_image_urls.py",
