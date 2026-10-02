@@ -61,11 +61,15 @@ STEPS = (
     "Start Game",
     "Palpagos Islands",
     "Start Game",
-    "Espera 2",
+    "Aguardar HUD (tecla E)",
 )
 WAIT_STEPS = frozenset({1, 3, 10})
-WAIT_KEYS = ("afterThrow", "wait1", "wait2")
-DEFAULT_WAITS = {"afterThrow": 2.0, "wait1": 0.0, "wait2": 0.0}
+WAIT_KEYS = ("afterThrow", "wait1")
+DEFAULT_WAITS = {"afterThrow": 2.0, "wait1": 0.0}
+# Ícone da tecla "E" (Pal) no canto inferior esquerdo, em frações da janela. O OCR não lê
+# uma letra isolada dentro do ícone, então detectamos o fundo claro do ícone por pixels.
+HUD_KEY_REGION = (0.083, 0.705, 0.105, 0.742)
+HUD_KEY_MIN_RATIO = 0.1
 
 
 def _norm(text: str) -> str:
@@ -392,6 +396,24 @@ class AutoLoop:
         except Exception:
             pass
 
+    def _wait_hud(self) -> None:
+        """Depois do ?ltimo Start Game, s? segue quando o ?cone da tecla E aparece no HUD."""
+        import numpy as np
+
+        from .coord_tooltip import grab_bbox_rgb
+
+        self._set(message="Aguardando o HUD do jogo (tecla E)?")
+        while True:
+            self._checkpoint()
+            left, top, right, bottom = self._window_rect()
+            w, h = right - left, bottom - top
+            fx0, fy0, fx1, fy1 = HUD_KEY_REGION
+            box = (left + int(w * fx0), top + int(h * fy0), left + int(w * fx1), top + int(h * fy1))
+            pixels = np.asarray(grab_bbox_rgb(box))
+            if float((pixels.min(axis=2) > 200).mean()) >= HUD_KEY_MIN_RATIO:
+                return
+            self._wait(VISIBLE_POLL)
+
     def _wait_visible(self, name: str, known: tuple[int, int]) -> bool:
         """Espera o texto aparecer perto da posição aprendida (OCR só numa faixa pequena)."""
         from .coord_tooltip import grab_bbox_rgb
@@ -479,7 +501,7 @@ class AutoLoop:
                 lambda: self._click_text("START_GAME"),
                 lambda: self._click_text("PALPAGOS_ISLANDS"),
                 lambda: self._click_text("START_GAME_2"),
-                lambda: self._wait(self._waits["wait2"]),
+                lambda: self._wait_hud(),
             )
             while True:
                 for index, action in enumerate(actions):

@@ -6,7 +6,7 @@ import type { AutoLoopState } from '@/types/server'
 
 const STORAGE_KEY = 'palworld:autoloop:waits'
 
-const DEFAULT_WAITS = { afterThrow: 2, wait1: 0, wait2: 0 }
+const DEFAULT_WAITS = { afterThrow: 2, wait1: 0 }
 type Waits = typeof DEFAULT_WAITS
 
 function loadWaits(): Waits {
@@ -17,7 +17,6 @@ function loadWaits(): Waits {
     return {
       afterThrow: read(raw.afterThrow, DEFAULT_WAITS.afterThrow),
       wait1: read(raw.wait1, DEFAULT_WAITS.wait1),
-      wait2: read(raw.wait2, DEFAULT_WAITS.wait2),
     }
   } catch {
     return { ...DEFAULT_WAITS }
