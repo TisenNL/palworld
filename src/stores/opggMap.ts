@@ -305,20 +305,16 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     if (selected?.kind === kind && selected.id === id) {
       selectedSpawnLocation.value = null
       spawnLocationLoadId++
+      spawnLocationCache.clear()
       spawnLocationLoading.value = false
       spawnLocationError.value = ''
       return
     }
 
+    spawnLocationCache.clear()
     selectedSpawnLocation.value = { kind, id }
     spawnLocationError.value = ''
     const key = `${kind}:${id}`
-    if (spawnLocationCache.has(key)) {
-      spawnLocationLoading.value = false
-      spawnLocationLoadId++
-      return
-    }
-
     const loadId = ++spawnLocationLoadId
     spawnLocationLoading.value = true
     try {
@@ -328,7 +324,15 @@ export const useOpggMapStore = defineStore('opggMap', () => {
       if (!response.ok) {
         throw new Error(`Failed to load ${kind} location ${id}: HTTP ${response.status}`)
       }
-      spawnLocationCache.set(key, spawnLocationPointsSchema.parse(await response.json()))
+      const points = spawnLocationPointsSchema.parse(await response.json())
+      if (
+        spawnLocationLoadId === loadId &&
+        selectedSpawnLocation.value?.kind === kind &&
+        selectedSpawnLocation.value.id === id
+      ) {
+        spawnLocationCache.clear()
+        spawnLocationCache.set(key, points)
+      }
     } catch (cause) {
       if (spawnLocationLoadId === loadId) {
         spawnLocationError.value =

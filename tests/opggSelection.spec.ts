@@ -179,15 +179,13 @@ describe('opggMap multi-select (batch mark queue)', () => {
         },
       ],
     ])
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: string) =>
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(dataByPath.get(input)),
-        }),
-      ),
+    const fetchMock = vi.fn((input: string) =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(dataByPath.get(input)),
+      }),
     )
+    vi.stubGlobal('fetch', fetchMock)
     const store = useOpggMapStore()
 
     await store.initialize()
@@ -202,5 +200,11 @@ describe('opggMap multi-select (batch mark queue)', () => {
     await store.toggleSpawnLocation('pals', 'SheepBall')
     expect(store.selectedSpawnLocation).toBeNull()
     expect(store.spawnPoints).toEqual([])
+
+    await store.toggleSpawnLocation('pals', 'SheepBall')
+    expect(store.spawnPoints).toEqual([{ gameX: 628791, gameY: -610720, day: true, night: false }])
+    expect(
+      fetchMock.mock.calls.filter(([url]) => url === '/opgg-spawn-locations/pals/SheepBall.json'),
+    ).toHaveLength(2)
   })
 })

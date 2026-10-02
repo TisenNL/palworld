@@ -103,9 +103,8 @@ def pick_match(
 
 
 _ocr_engine = None
-
-
 _ocr_rec_engine = None
+_ocr_lock = threading.Lock()
 
 
 def _ocr_line_matches(image: Image.Image, wanted: tuple[str, ...]) -> bool:
@@ -114,9 +113,21 @@ def _ocr_line_matches(image: Image.Image, wanted: tuple[str, ...]) -> bool:
     import numpy as np
     from rapidocr_onnxruntime import RapidOCR
 
-    if _ocr_rec_engine is None:
-        _ocr_rec_engine = RapidOCR(use_text_det=False, use_angle_cls=False)
-    result, _elapsed = _ocr_rec_engine(np.asarray(image))
+    with _ocr_lock:
+        if _ocr_engine is not None:
+            engine = _ocr_engine
+            use_text_det, use_angle_cls = engine.use_text_det, engine.use_angle_cls
+            engine.use_text_det = False
+            engine.use_angle_cls = False
+            try:
+                result, _elapsed = engine(np.asarray(image))
+            finally:
+                engine.use_text_det = use_text_det
+                engine.use_angle_cls = use_angle_cls
+        else:
+            if _ocr_rec_engine is None:
+                _ocr_rec_engine = RapidOCR(use_text_det=False, use_angle_cls=False)
+            result, _elapsed = _ocr_rec_engine(np.asarray(image))
     for entry in result or []:
         text, score = str(entry[-2]), float(entry[-1])
         if score >= OCR_MIN_SCORE and any(text_matches(text, w) for w in wanted):
@@ -125,15 +136,17 @@ def _ocr_line_matches(image: Image.Image, wanted: tuple[str, ...]) -> bool:
 
 
 def _ocr_items(image: Image.Image) -> list[tuple[str, float, float, float]]:
-    global _ocr_engine
+    global _ocr_engine, _ocr_rec_engine
     try:
         import numpy as np
         from rapidocr_onnxruntime import RapidOCR
     except ImportError as exc:
         raise AutoLoopError("OCR não instalado. Reinicie usando start.bat.") from exc
-    if _ocr_engine is None:
-        _ocr_engine = RapidOCR()
-    result, _elapsed = _ocr_engine(np.asarray(image))
+    with _ocr_lock:
+        if _ocr_engine is None:
+            _ocr_rec_engine = None
+            _ocr_engine = RapidOCR()
+        result, _elapsed = _ocr_engine(np.asarray(image))
     items: list[tuple[str, float, float, float]] = []
     for entry in result or []:
         box, text, score = entry[0], str(entry[1]), float(entry[2])
