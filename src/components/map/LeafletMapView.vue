@@ -331,10 +331,40 @@ function syncSpawnLocations(): void {
   }
 }
 
+let playerGlideRaf = 0
+let playerTarget: [number, number] | null = null
+let playerGlideLast = 0
+
+function cancelPlayerGlide(): void {
+  cancelAnimationFrame(playerGlideRaf)
+  playerGlideRaf = 0
+  playerTarget = null
+}
+
+// Desliza o marcador/mapa até a última posição lida; o loop para sozinho ao chegar (custo zero parado).
+function playerGlideStep(now: number): void {
+  playerGlideRaf = 0
+  if (!mapInstance || !playerPositionMarker || !playerTarget) return
+  const dt = Math.min(0.1, (now - playerGlideLast) / 1000)
+  playerGlideLast = now
+  const current = playerPositionMarker.getLatLng()
+  const k = 1 - Math.exp(-dt * 14)
+  const dLat = playerTarget[0] - current.lat
+  const dLng = playerTarget[1] - current.lng
+  const done = Math.abs(dLat) + Math.abs(dLng) < 0.01
+  const next: [number, number] = done
+    ? playerTarget
+    : [current.lat + dLat * k, current.lng + dLng * k]
+  playerPositionMarker.setLatLng(next)
+  mapInstance.panTo(next, { animate: false })
+  if (!done) playerGlideRaf = requestAnimationFrame(playerGlideStep)
+}
+
 function syncPlayerPosition(): void {
   if (!mapInstance) return
   const position = props.playerPosition
   if (!position || position.mapZone !== props.mapZone) {
+    cancelPlayerGlide()
     playerPositionMarker?.remove()
     playerPositionMarker = null
     return
@@ -342,8 +372,12 @@ function syncPlayerPosition(): void {
 
   const [lat, lng] = toLatLng(getMapWindow(props.mapZone), position.gameX, position.gameY)
   if (playerPositionMarker) {
-    playerPositionMarker.setLatLng([lat, lng]).setZIndexOffset(1_000)
-    mapInstance.panTo([lat, lng], { animate: false })
+    playerPositionMarker.setZIndexOffset(1_000)
+    playerTarget = [lat, lng]
+    if (!playerGlideRaf) {
+      playerGlideLast = performance.now()
+      playerGlideRaf = requestAnimationFrame(playerGlideStep)
+    }
     return
   }
   playerPositionMarker = L.marker([lat, lng], {
@@ -458,7 +492,10 @@ watch([() => props.mapZone, () => props.playerPosition], syncPlayerPosition)
 let sizeDebounceTimer: ReturnType<typeof setTimeout> | undefined
 watch(() => mapStore.markerSize, () => {
   clearTimeout(sizeDebounceTimer)
-  sizeDebounceTimer = setTimeout(refreshMarkerIcons, 80)
+  sizeDebounceTimer = setTimeout(() => {
+    clearMarkerHtmlCache()
+    refreshMarkerIcons()
+  }, 80)
 })
 
 // ── Fix 1 — checked watch: only update markers whose state actually changed
@@ -583,6 +620,7 @@ onMounted(initMap)
 
 onBeforeUnmount(() => {
   syncToken++ // aborta chunks pendentes
+  cancelPlayerGlide()
   cancelSmoothZoom()
   clearTimeout(sizeDebounceTimer)
   mapContainer.value?.removeEventListener('wheel', handleWheel)

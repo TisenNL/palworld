@@ -16,6 +16,7 @@ import time
 import tkinter as tk
 import urllib.error
 import urllib.request
+from collections import OrderedDict
 from ctypes import wintypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -114,8 +115,11 @@ def _host_is_local(host: str) -> bool:
     elif host.count(":") == 1:
         host = host.split(":", 1)[0]
     return host in ALLOWED_LOCAL_HOSTS
-TILE_BYTES_CACHE: Dict[Tuple[str, int, int, int], bytes] = {}
-ICON_BYTES_CACHE: Dict[str, bytes] = {}
+TILE_BYTES_CACHE: OrderedDict[Tuple[str, int, int, int], bytes] = OrderedDict()
+ICON_BYTES_CACHE: OrderedDict[str, bytes] = OrderedDict()
+TILE_CACHE_MAX_BYTES = 32 * 1024 * 1024
+ICON_CACHE_MAX_BYTES = 8 * 1024 * 1024
+_IMAGE_CACHE_LOCK = threading.Lock()
 _TILE_FETCH_LOCK = threading.Semaphore(4)
 _TILE_FETCH_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -1028,13 +1032,29 @@ def _http_get_bytes(url: str, referer: str, attempts: int = 2) -> bytes:
     raise last_exc
 
 
+def _image_cache_get(cache: OrderedDict, key) -> Optional[bytes]:
+    with _IMAGE_CACHE_LOCK:
+        data = cache.get(key)
+        if data is not None:
+            cache.move_to_end(key)
+        return data
+
+
+def _image_cache_put(cache: OrderedDict, key, data: bytes, max_bytes: int) -> None:
+    with _IMAGE_CACHE_LOCK:
+        cache[key] = data
+        cache.move_to_end(key)
+        while cache and sum(map(len, cache.values())) > max_bytes:
+            cache.popitem(last=False)
+
+
 def fetch_map_icon_bytes(url: str) -> bytes:
     """Secure paldb icon proxy with CORS and disk caching."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or parsed.netloc not in ICON_ALLOWED_HOSTS:
         raise ValueError("icon host not allowed")
     key = url
-    cached = ICON_BYTES_CACHE.get(key)
+    cached = _image_cache_get(ICON_BYTES_CACHE, key)
     if cached is not None:
         return cached
     digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
@@ -1045,12 +1065,12 @@ def fetch_map_icon_bytes(url: str) -> bytes:
     for candidate in (BUNDLED_ICON_DISK / path.name, path):
         if candidate.is_file() and candidate.stat().st_size > 0:
             data = candidate.read_bytes()
-            ICON_BYTES_CACHE[key] = data
+            _image_cache_put(ICON_BYTES_CACHE, key, data, ICON_CACHE_MAX_BYTES)
             return data
     data = _http_get_bytes(url, "https://paldb.cc/en/Palpagos_Islands")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
-    ICON_BYTES_CACHE[key] = data
+    _image_cache_put(ICON_BYTES_CACHE, key, data, ICON_CACHE_MAX_BYTES)
     return data
 
 
@@ -1061,18 +1081,18 @@ def fetch_tile_bytes(z: int, tx: int, ty: int) -> bytes:
     tx = max(0, min(n - 1, int(tx)))
     ty = max(0, min(n - 1, int(ty)))
     key = ("mg", z, tx, ty)
-    cached = TILE_BYTES_CACHE.get(key)
+    cached = _image_cache_get(TILE_BYTES_CACHE, key)
     if cached is not None:
         return cached
     path = TILE_DISK / "mg" / f"z{z}" / f"{tx}_{ty}.jpg"
     if path.is_file() and path.stat().st_size > 64:
         data = path.read_bytes()
-        TILE_BYTES_CACHE[key] = data
+        _image_cache_put(TILE_BYTES_CACHE, key, data, TILE_CACHE_MAX_BYTES)
         return data
     # OFFLINE MODE: return blank tile instead of fetching from network
     print(f"[tile] missing: z{z}/{tx}_{ty} — run tools/download_map_tiles.py", flush=True)
     data = _blank_tile_jpeg()
-    TILE_BYTES_CACHE[key] = data
+    _image_cache_put(TILE_BYTES_CACHE, key, data, TILE_CACHE_MAX_BYTES)
     return data
 
 
@@ -1083,18 +1103,18 @@ def fetch_wt_tile_bytes(z: int, tx: int, ty: int) -> bytes:
     tx = max(0, min(n - 1, int(tx)))
     ty = max(0, min(n - 1, int(ty)))
     key = ("wt", z, tx, ty)
-    cached = TILE_BYTES_CACHE.get(key)
+    cached = _image_cache_get(TILE_BYTES_CACHE, key)
     if cached is not None:
         return cached
     path = WT_TILE_DISK / f"z{z}" / f"{tx}_{ty}.jpg"
     if path.is_file() and path.stat().st_size > 64:
         data = path.read_bytes()
-        TILE_BYTES_CACHE[key] = data
+        _image_cache_put(TILE_BYTES_CACHE, key, data, TILE_CACHE_MAX_BYTES)
         return data
     # OFFLINE MODE: return blank tile instead of fetching from network
     print(f"[tile-wt] missing: z{z}/{tx}_{ty} — run tools/download_map_tiles.py", flush=True)
     data = _blank_tile_jpeg()
-    TILE_BYTES_CACHE[key] = data
+    _image_cache_put(TILE_BYTES_CACHE, key, data, TILE_CACHE_MAX_BYTES)
     return data
 
 

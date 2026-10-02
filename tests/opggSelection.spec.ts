@@ -137,15 +137,13 @@ describe('opggMap multi-select (batch mark queue)', () => {
       ['/opgg-marker-counts.json', { palpagos: {}, worldtree: {} }],
       ['/opgg-spawn-locations/catalog.json', { revision: 'test', pals: [], humans: [] }],
     ])
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: string) =>
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(dataByPath.get(input)),
-        }),
-      ),
+    const fetchMock = vi.fn((input: string) =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(dataByPath.get(input)),
+      }),
     )
+    vi.stubGlobal('fetch', fetchMock)
     const store = useOpggMapStore()
 
     await store.initialize()
@@ -158,6 +156,10 @@ describe('opggMap multi-select (batch mark queue)', () => {
 
     await store.setZone('world-tree')
     expect(store.isTypeVisible('FieldBoss')).toBe(false)
+    expect(store.rawMarkers.map((marker) => marker.id)).toEqual([treeMarker.id])
+    expect(
+      fetchMock.mock.calls.filter(([url]) => url === '/opgg-markers-worldtree.json'),
+    ).toHaveLength(2)
   })
 
   it('keeps selected Pal spawn points active when switching maps', async () => {

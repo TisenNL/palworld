@@ -162,12 +162,10 @@ export const useOpggMapStore = defineStore('opggMap', () => {
   /** Raw markers for the active zone (loaded from JSON) */
   const rawMarkers = shallowRef<Marker[]>([])
 
-  /** Both marker datasets stay loaded so global filter actions cover both maps. */
-  const markersByZone = shallowRef<Record<MapZone, Marker[]>>({
-    palpagos: [],
-    'world-tree': [],
-  })
-  const loadedZones = reactive(new Set<MapZone>())
+  /** Keep only the active zone's full marker objects; retain compact filter metadata for both. */
+  let markerDataZone: MapZone | null = null
+  const filterKeysByZone = new Map<MapZone, Set<string>>()
+  const filterKeysByGroupByZone = new Map<MapZone, Map<string, Set<string>>>()
   const zoneErrors = ref<Partial<Record<MapZone, string>>>({})
   const zoneLoads = new Map<MapZone, Promise<void>>()
 
@@ -221,7 +219,7 @@ export const useOpggMapStore = defineStore('opggMap', () => {
   // ── Load data ────────────────────────────────────────────────────────────
 
   async function loadZone(zone: MapZone): Promise<void> {
-    if (loadedZones.has(zone)) return
+    if (markerDataZone === zone) return
     const existingLoad = zoneLoads.get(zone)
     if (existingLoad) return existingLoad
 
@@ -233,12 +231,27 @@ export const useOpggMapStore = defineStore('opggMap', () => {
         if (!resp.ok) throw new Error(`Failed to load ${fileName}: HTTP ${resp.status}`)
         const json: unknown = await resp.json()
         const markers = import.meta.env.DEV ? markersSchema.parse(json) : (json as Marker[])
-        markersByZone.value = { ...markersByZone.value, [zone]: markers }
-        loadedZones.add(zone)
+        const filterKeys = new Set<string>()
+        const filterKeysByGroup = new Map<string, Set<string>>()
+        for (const marker of markers) {
+          const key = markerFilterKey(marker)
+          filterKeys.add(key)
+          let groupKeys = filterKeysByGroup.get(marker.group)
+          if (!groupKeys) {
+            groupKeys = new Set<string>()
+            filterKeysByGroup.set(marker.group, groupKeys)
+          }
+          groupKeys.add(key)
+        }
+        filterKeysByZone.set(zone, filterKeys)
+        filterKeysByGroupByZone.set(zone, filterKeysByGroup)
         const nextErrors = { ...zoneErrors.value }
         delete nextErrors[zone]
         zoneErrors.value = nextErrors
-        if (activeZone.value === zone) rawMarkers.value = markers
+        if (activeZone.value === zone) {
+          rawMarkers.value = markers
+          markerDataZone = zone
+        }
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : 'Failed to load markers'
         zoneErrors.value = { ...zoneErrors.value, [zone]: message }
@@ -359,22 +372,26 @@ export const useOpggMapStore = defineStore('opggMap', () => {
       loadZone('world-tree'),
       loadSpawnCatalog(),
     ])
-    rawMarkers.value = markersByZone.value[activeZone.value]
+    if (markerDataZone !== activeZone.value) rawMarkers.value = []
     error.value = zoneErrors.value[activeZone.value] ?? ''
     loading.value = false
   }
 
   /** Switch active map zone */
   async function setZone(zone: MapZone): Promise<void> {
-    if (zone === activeZone.value && loadedZones.has(zone)) return
+    if (zone === activeZone.value && markerDataZone === zone) return
     activeZone.value = zone
     selectedMarker.value = null
     selectedMarkerIds.clear()
-    loading.value = !loadedZones.has(zone)
+    rawMarkers.value = []
+    markerDataZone = null
+    checkedKeyIndexSource = null
+    checkedKeyByMarkerId.clear()
+    collisionMarkerIds.clear()
+    loading.value = true
     error.value = zoneErrors.value[zone] ?? ''
     await loadZone(zone)
     if (activeZone.value !== zone) return
-    rawMarkers.value = markersByZone.value[zone]
     error.value = zoneErrors.value[zone] ?? ''
     loading.value = false
   }
@@ -395,24 +412,25 @@ export const useOpggMapStore = defineStore('opggMap', () => {
   /** Show only one specific type */
   function showOnlyType(type: string): void {
     visibleTypes.clear()
-    const allTypes = [
-      ...new Set(Object.values(markersByZone.value).flat().map(markerFilterKey)),
-    ]
-    for (const t of allTypes) {
+    for (const t of allFilterKeys()) {
       if (t !== type) visibleTypes.add(t)
     }
   }
 
+  function allFilterKeys(): Set<string> {
+    const keys = new Set<string>()
+    for (const zoneKeys of filterKeysByZone.values()) {
+      for (const key of zoneKeys) keys.add(key)
+    }
+    return keys
+  }
+
   /** Toggle all types in a group visible/hidden */
   function setGroupVisible(group: string, visible: boolean): void {
-    const typesInGroup = [
-      ...new Set(
-        Object.values(markersByZone.value)
-          .flat()
-          .filter((marker) => marker.group === group)
-          .map(markerFilterKey),
-      ),
-    ]
+    const typesInGroup = new Set<string>()
+    for (const zoneGroups of filterKeysByGroupByZone.values()) {
+      for (const key of zoneGroups.get(group) ?? []) typesInGroup.add(key)
+    }
     if (visible) {
       for (const t of typesInGroup) visibleTypes.delete(t)
     } else {
@@ -424,9 +442,7 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     if (visible) {
       visibleTypes.clear()
     } else {
-      for (const marker of Object.values(markersByZone.value).flat()) {
-        visibleTypes.add(markerFilterKey(marker))
-      }
+      for (const key of allFilterKeys()) visibleTypes.add(key)
     }
   }
 
