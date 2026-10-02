@@ -62,10 +62,11 @@ STEPS = (
     "Palpagos Islands",
     "Start Game",
     "Aguardar HUD (tecla E)",
+    "Espera após HUD",
 )
-WAIT_STEPS = frozenset({1, 3, 10})
-WAIT_KEYS = ("afterThrow", "wait1")
-DEFAULT_WAITS = {"afterThrow": 2.0, "wait1": 0.0}
+WAIT_STEPS = frozenset({1, 3, 10, 11})
+WAIT_KEYS = ("afterThrow", "wait1", "afterHud")
+DEFAULT_WAITS = {"afterThrow": 2.0, "wait1": 0.0, "afterHud": 0.0}
 # Ícone da tecla "E" (Pal) no canto inferior esquerdo, em frações da janela. O OCR não lê
 # uma letra isolada dentro do ícone, então detectamos o fundo claro do ícone por pixels.
 HUD_KEY_REGION = (0.083, 0.705, 0.105, 0.742)
@@ -502,6 +503,7 @@ class AutoLoop:
                 lambda: self._click_text("PALPAGOS_ISLANDS"),
                 lambda: self._click_text("START_GAME_2"),
                 lambda: self._wait_hud(),
+                lambda: self._wait(self._waits["afterHud"]),
             )
             while True:
                 for index, action in enumerate(actions):
