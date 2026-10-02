@@ -179,6 +179,18 @@ def read_game_coordinate(bbox: Tuple[int, int, int, int]) -> Optional[Tuple[int,
         return None
 
 
+def player_ingame_coordinate() -> Optional[Tuple[int, int]]:
+    """Player position in in-game map units (same conversion as toIngamePoint in the frontend)."""
+    state = read_palworld_position()
+    position = state.get("position") if state.get("status") == "ready" else None
+    if not position:
+        return None
+    return (
+        round((position["gameY"] - 158_000) / 459),
+        round((position["gameX"] + 123_888) / 459),
+    )
+
+
 def game_screen_center() -> Tuple[int, int]:
     left, top, width, height = largest_monitor()
     return left + width // 2, top + height // 2
@@ -1508,6 +1520,7 @@ def main() -> None:
         game_marker_controller = GameMarkerController(
             read_game_coordinate,
             update_game_marker_state,
+            position_hint=player_ingame_coordinate,
         )
         mouse_loop_controller = MouseComboLoop(update_mouse_loop_state)
         threading.Thread(target=_warmup_ocr, daemon=True).start()

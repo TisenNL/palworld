@@ -1,15 +1,22 @@
 from __future__ import annotations
 
-import unittest
+import io
 import struct
+import unittest
 
 from server.player_position import (
     ACTOR_POINTER_OFFSET,
     FIRST_OBJECT_POINTER_OFFSET,
+    GAME_INSTANCE_LOCAL_PLAYERS_OFFSET,
+    LOCAL_PLAYER_CONTROLLER_OFFSET,
     LOCATION_VECTOR_OFFSET,
-    _parse_overwolf_actor_address,
+    PLAYER_CONTROLLER_PAWN_OFFSET,
+    WORLD_GAME_INSTANCE_OFFSET,
+    _gworld_signature_offsets,
     _position_zone,
+    _read_local_player_actor_address,
     _read_player_position_from_memory,
+    _scan_gworld_signature,
     probe_palworld_process,
 )
 
@@ -82,29 +89,84 @@ class PalworldProcessProbeTest(unittest.TestCase):
 
 
 class PalworldPositionReaderTest(unittest.TestCase):
-    def test_parses_newest_player_actor_address_without_requiring_coordinates(self):
-        first = (
-            '2026-10-02 10:00:00,000 (INFO) - Got first player '
-            '{"action":"player","payload":{"address":1234,"x":1,"y":2,"z":3}}'
+    def test_finds_only_the_validated_unreal_world_signature(self):
+        signature = b"\x48\x8b\x05" + b"\x01\x02\x03\x04" + b"\xeb\x05"
+
+        self.assertEqual([3], _gworld_signature_offsets(b"abc" + signature + b"xyz"))
+        self.assertEqual([], _gworld_signature_offsets(b"no signature"))
+        self.assertEqual(
+            [0, 12],
+            _gworld_signature_offsets(signature + b"---" + signature),
         )
-        latest = (
-            '2026-10-02 10:01:00,000 (INFO) - Got first player '
-            '{"action":"player","payload":{"address":5678}}'
+
+    def test_finds_signature_split_across_file_read_chunks(self):
+        signature = b"\x48\x8b\x05" + b"\x01\x02\x03\x04" + b"\xeb\x05"
+        prefix = b"x" * (1024 * 1024 - 4)
+        executable = io.BytesIO(prefix + signature)
+
+        self.assertEqual(
+            [0x400000 + len(prefix)],
+            _scan_gworld_signature(
+                executable,
+                0,
+                len(prefix) + len(signature),
+                0x400000,
+            ),
         )
 
-        result = _parse_overwolf_actor_address([first, latest])
+    def test_follows_unreal_local_player_chain_to_the_character(self):
+        world = 0x10000
+        game_instance = 0x11000
+        local_players = 0x12000
+        local_player = 0x13000
+        player_controller = 0x14000
+        player_character = 0x15000
+        memory = {
+            world + WORLD_GAME_INSTANCE_OFFSET: struct.pack("<Q", game_instance),
+            game_instance + GAME_INSTANCE_LOCAL_PLAYERS_OFFSET: struct.pack(
+                "<Qii",
+                local_players,
+                1,
+                1,
+            ),
+            local_players: struct.pack("<Q", local_player),
+            local_player + LOCAL_PLAYER_CONTROLLER_OFFSET: struct.pack(
+                "<Q",
+                player_controller,
+            ),
+            player_controller + PLAYER_CONTROLLER_PAWN_OFFSET: struct.pack(
+                "<Q",
+                player_character,
+            ),
+        }
 
-        self.assertIsNotNone(result)
-        self.assertEqual(5678, result[0])
-        self.assertGreater(result[1], 0)
+        def read_memory(address: int, _size: int) -> bytes | None:
+            return memory.get(address)
 
-    def test_ignores_malformed_or_invalid_player_messages(self):
-        lines = [
-            "Got first player not-json",
-            '2026-10-02 10:00:00,000 Got first player {"payload":{"address":0}}',
-        ]
+        self.assertEqual(
+            player_character,
+            _read_local_player_actor_address(world, read_memory),
+        )
 
-        self.assertIsNone(_parse_overwolf_actor_address(lines))
+    def test_rejects_invalid_local_player_array(self):
+        world = 0x10000
+        game_instance = 0x11000
+        memory = {
+            world + WORLD_GAME_INSTANCE_OFFSET: struct.pack("<Q", game_instance),
+            game_instance + GAME_INSTANCE_LOCAL_PLAYERS_OFFSET: struct.pack(
+                "<Qii",
+                0x12000,
+                0,
+                0,
+            ),
+        }
+
+        self.assertIsNone(
+            _read_local_player_actor_address(
+                world,
+                lambda address, _size: memory.get(address),
+            )
+        )
 
     def test_reads_player_position_through_validated_pointer_chain(self):
         actor = 0x1000

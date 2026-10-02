@@ -32,7 +32,7 @@ Open **http://127.0.0.1:5173** in your browser.
 | Responsive layout (sidebar collapses on mobile) | ✅ |
 | World Tree map tab | ✅ |
 | Pal and human location filters | ✅ |
-| Live player marker (validated Palworld build and Overwolf app required) | ✅ |
+| Live player marker (validated Palworld build required) | ✅ |
 | OCR coordinates (requires local helper) | ✅ |
 | HUD marker in-game (requires local helper) | ✅ |
 | Mark-in-game automation (requires local helper) | ✅ |
@@ -159,7 +159,7 @@ ingameZ = round(gameZ / 100)   // in meters
 ## Local Helper (Optional)
 
 The local Python helper enables:
-- **Live player position** — read-only game-memory reader; open the Palworld Overwolf app once after starting the game. Enabled only for the validated Palworld executable build.
+- **Live player position** — read-only game-memory reader; enabled only for the validated Palworld executable build. No Overwolf app is required.
 - **OCR** — read coordinates directly from your Palworld game screen
 - **HUD** — place a marker in the Palworld in-game map
 - **Mark in game** — automated map marking using mouse automation

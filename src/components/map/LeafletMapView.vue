@@ -343,6 +343,7 @@ function syncPlayerPosition(): void {
   const [lat, lng] = toLatLng(getMapWindow(props.mapZone), position.gameX, position.gameY)
   if (playerPositionMarker) {
     playerPositionMarker.setLatLng([lat, lng]).setZIndexOffset(1_000)
+    mapInstance.panTo([lat, lng], { animate: false })
     return
   }
   playerPositionMarker = L.marker([lat, lng], {
@@ -357,6 +358,7 @@ function syncPlayerPosition(): void {
     zIndexOffset: 1_000,
   })
     .addTo(mapInstance)
+  mapInstance.panTo([lat, lng], { animate: false })
 }
 
 // ── Fix 2 — chunked initial load to avoid blocking the main thread ────────
@@ -532,6 +534,7 @@ watch(() => props.mapZone, async (newZone) => {
   }
   updateZoomPercent(mapInstance.getZoom())
   syncSpawnLocations()
+  syncPlayerPosition()
 
   await nextTick()
   // Fix 2 — chunked load also on zone switch (new zone may have many markers)

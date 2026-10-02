@@ -15,16 +15,29 @@ Box = tuple[int, int, int, int]
 StateUpdater = Callable[..., None]
 CoordinateReader = Callable[[Box], Optional[Coordinate]]
 
+PLAYER_HINT_TOLERANCE = 3.0
+# Large probe: at max map zoom one coordinate unit is ~12 px, so 240 px gives <1% scale error.
+MOUSE_PROBE_PIXELS = 240
+MOUSE_PROBE_SETTLE = 0.4
+MOUSE_JUMP_WAIT = 1.0
+MOUSE_CALIBRATION_ATTEMPTS = 3
+SUBUNIT_ERROR = 2.5
+SUBUNIT_STEP_FRACTION = 0.6
+
 VK = {
     "A": 0x41,
     "D": 0x44,
     "E": 0x45,
     "S": 0x53,
     "W": 0x57,
+    "M": 0x4D,
     "ENTER": 0x0D,
     "ESCAPE": 0x1B,
 }
 KEY_UP = 0x0002
+MOUSEEVENTF_WHEEL = 0x0800
+MAP_ZOOM_STEPS = 12
+MAP_OPEN_WAIT = 1.2
 LEFT_DOWN = 0x0002
 LEFT_UP = 0x0004
 RIGHT_DOWN = 0x0008
@@ -56,12 +69,12 @@ OPT_LIGHT_CALIBRATION = _env_flag("PALWORLD_MARKER_LIGHT_CALIBRATION", "1")
 OPT_SKIP_CURSOR_SETTLE = _env_flag("PALWORLD_MARKER_SKIP_CURSOR_SETTLE", "1")
 MARKER_TIMING = _env_flag("PALWORLD_MARKER_TIMING", "0")
 
-NEAR_FIELD = 22.0
+NEAR_FIELD = 40.0
 STABLE_NEAR_FIELD = 25.0
 MOUSE_VALIDATE_PIXELS = 24
 MOUSE_VALIDATE_ALIGNMENT = 0.35
-MOUSE_MAX_STEP_NEAR = 30.0
-MOUSE_MAX_STEP_WIDE = 70.0
+MOUSE_MAX_STEP_NEAR = 480.0
+MOUSE_MAX_STEP_WIDE = 480.0
 DUAL_AXIS_MIN_ERROR = 60.0
 SINGLE_OCR_MIN_ERROR = 30.0   # was 40.0 - engage single-read sooner
 SINGLE_OCR_MIN_CONF = 0.76    # was 0.82 - accept lower confidence in open field
@@ -329,6 +342,16 @@ class WindowsGameInput:
         if tc is not None:
             tc.add_win32("SetCursorPos", cursor=[int(x), int(y)], call_ms=round((time.perf_counter() - t0) * 1000, 4))
 
+    def toggle_map(self) -> None:
+        self.user32.keybd_event(VK["M"], 0, 0, 0)
+        time.sleep(0.05)
+        self.user32.keybd_event(VK["M"], 0, KEY_UP, 0)
+
+    def zoom_in_max(self, steps: int = MAP_ZOOM_STEPS) -> None:
+        for _ in range(steps):
+            self.user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, 120, 0)
+            time.sleep(0.03)
+
     def tap_key(self, key: str, duration: float) -> None:
         self.tap_keys([key], duration)
 
@@ -401,7 +424,9 @@ class GameMarkerController:
         timeout_seconds: float = 90.0,
         sleep: Callable[[float], None] = time.sleep,
         cache_key: Optional[str] = None,
+        position_hint: Optional[Callable[[], Optional[Coordinate]]] = None,
     ) -> None:
+        self.position_hint = position_hint
         self.read_coordinate = read_coordinate
         self.update_state = update_state
         self.game_input = game_input or WindowsGameInput()
@@ -604,6 +629,70 @@ class GameMarkerController:
             self.sleep(0.08)
         raise RuntimeError("OCR coordinates are missing or unstable")
 
+    def _prepare_map(self, box: Box, origin: Coordinate, started: float) -> None:
+        """Open the map (M toggles, so only when no coordinate is readable) and zoom to max."""
+        toggle = getattr(self.game_input, "toggle_map", None)
+        zoom = getattr(self.game_input, "zoom_in_max", None)
+        if toggle is None or zoom is None:
+            return
+        self._check_safety(started)
+        if self._ocr(box, origin) is None:
+            self.update_state(status="calibrating", message="Opening the map")
+            toggle()
+            self.sleep(MAP_OPEN_WAIT)
+            self.game_input.move_cursor(*origin)
+            self.sleep(0.2)
+            if self._ocr(box, origin) is None:
+                raise RuntimeError("Could not open the in-game map")
+        zoom()
+        self.sleep(0.5)
+
+    def _read_initial(self, box: Box, origin: Coordinate, started: float) -> Coordinate:
+        """The map opens centered on the player, so a single OCR read that matches the
+        player's memory position is trusted; otherwise fall back to the stable read."""
+        hint: Optional[Coordinate] = None
+        if self.position_hint is not None:
+            try:
+                hint = self.position_hint()
+            except Exception:
+                hint = None
+        if hint is not None:
+            self._check_safety(started)
+            value = self._ocr(box, origin)
+            if value is not None and math.hypot(
+                value[0] - hint[0], value[1] - hint[1]
+            ) <= PLAYER_HINT_TOLERANCE:
+                return value
+        return self._read(box, origin, started, require_stable=True)
+
+    def _read_toward(
+        self,
+        box: Box,
+        origin: Coordinate,
+        started: float,
+        previous: Coordinate,
+        predicted: Coordinate,
+    ) -> Coordinate:
+        """After a large cursor jump the HUD lags; wait until it reaches the predicted value."""
+        distance = math.hypot(predicted[0] - previous[0], predicted[1] - previous[1])
+        tolerance = max(2.0, distance * 0.12)
+        self._set_ocr_reason("post_jump")
+        deadline = time.monotonic() + MOUSE_JUMP_WAIT
+        matches = 0
+        last: Optional[Coordinate] = None
+        while time.monotonic() < deadline:
+            self._check_safety(started)
+            value = self._ocr(box, origin)
+            if value is not None and math.hypot(value[0] - predicted[0], value[1] - predicted[1]) <= tolerance:
+                matches = matches + 1 if value == last else 1
+                last = value
+                if matches >= 2:
+                    return value
+            else:
+                matches = 0
+            self.sleep(0.03)
+        return self._read_near(box, origin, started, previous, maximum_delta=500.0, require_stable=True)
+
     def _read_near(
         self,
         box: Box,
@@ -635,30 +724,51 @@ class GameMarkerController:
         self.timing.begin_phase("calibration_mouse")
         self._set_ocr_reason("calibration_mouse")
         anchor = self.game_input.cursor()
-        vectors: list[tuple[float, float]] = []
-        latest = current
-        for dx, dy in ((24, 0), (0, 24)):
-            self.game_input.move_cursor(anchor[0] + dx, anchor[1] + dy)
-            moved = self._read_after_action(
-                box,
-                origin,
-                started,
-                latest,
-                0.14 if OPT_LIGHT_CALIBRATION else 0.16,
-                require_stable=True,
-                allow_single_read=False,
-            )
-            vectors.append(((moved[0] - latest[0]) / 24.0, (moved[1] - latest[1]) / 24.0))
-            self.game_input.move_cursor(*anchor)
-            latest = self._read_after_action(
-                box,
-                origin,
-                started,
-                moved,
-                0.14 if OPT_LIGHT_CALIBRATION else 0.16,
-                require_stable=True,
-                allow_single_read=False,
-            )
+        base = current
+        for attempt in range(MOUSE_CALIBRATION_ATTEMPTS):
+            vectors: list[tuple[float, float]] = []
+            for dx, dy in ((MOUSE_PROBE_PIXELS, 0), (0, MOUSE_PROBE_PIXELS)):
+                self.game_input.move_cursor(anchor[0] + dx, anchor[1] + dy)
+                # The HUD coordinate lags a large cursor jump; reading too early gives a partial value.
+                self.sleep(MOUSE_PROBE_SETTLE)
+                moved = self._read_after_action(
+                    box,
+                    origin,
+                    started,
+                    base,
+                    0.14 if OPT_LIGHT_CALIBRATION else 0.16,
+                    require_stable=True,
+                    allow_single_read=False,
+                )
+                vectors.append(
+                    (
+                        (moved[0] - base[0]) / float(MOUSE_PROBE_PIXELS),
+                        (moved[1] - base[1]) / float(MOUSE_PROBE_PIXELS),
+                    )
+                )
+                self.game_input.move_cursor(*anchor)
+                # The HUD can keep showing the probed value for a few frames; wait for the base value
+                # so a stale read is never used as the next reference.
+                for _ in range(8):
+                    self._check_safety(started)
+                    latest = self._ocr(box, origin)
+                    if latest is not None and math.hypot(latest[0] - base[0], latest[1] - base[1]) <= 1:
+                        break
+                    self.sleep(0.08)
+            x_vec, y_vec = vectors
+            if (
+                abs(x_vec[0]) >= 0.03
+                and abs(y_vec[1]) >= 0.03
+                and abs(x_vec[1]) <= abs(x_vec[0]) * 0.25
+                and abs(y_vec[0]) <= abs(y_vec[1]) * 0.25
+            ):
+                break
+            if attempt == MOUSE_CALIBRATION_ATTEMPTS - 1:
+                raise RuntimeError(f"Mouse calibration was implausible; map may have moved ({x_vec}, {y_vec})")
+            # The map may still be gliding after the keyboard calibration; wait and re-read the base.
+            self.sleep(0.5)
+            base = self._read(box, origin, started, require_stable=True)
+        latest = base
         self.timing.end_phase("calibration_mouse")
         return vectors[0], vectors[1], latest
 
@@ -1032,9 +1142,11 @@ class GameMarkerController:
                 self.sleep(0.12 if OPT_LIGHT_CALIBRATION else 0.3)
             self.timing.end_phase("focus")
 
+            self._prepare_map(selection_box, selection_point, started)
+
             self._set_ocr_reason("initial")
             self.timing.begin_phase("initial_read")
-            current = self._read(selection_box, selection_point, started, require_stable=True)
+            current = self._read_initial(selection_box, selection_point, started)
             self.timing.end_phase("initial_read")
             self.timing.run_start(target, current)
             self.update_state(
@@ -1169,6 +1281,7 @@ class GameMarkerController:
                 action_keys: list[str] = []
                 action_duration = 0.0
                 mouse_moved = False
+                predicted: Optional[Coordinate] = None
                 err_norm = math.hypot(*error)
 
                 can_open_loop = (
@@ -1251,6 +1364,13 @@ class GameMarkerController:
                         self.timing.iteration_end([], 0.0, (current[0] - previous[0], current[1] - previous[1]))
                         continue
                     mouse_delta = solve_mouse_delta(error, *mouse_vectors)
+                    if mouse_delta is not None and err_norm <= SUBUNIT_ERROR:
+                        # The HUD shows a truncated coordinate: a full-unit step can cross two unit
+                        # boundaries and oscillate, so approach the last units from one side.
+                        mouse_delta = (
+                            mouse_delta[0] * SUBUNIT_STEP_FRACTION,
+                            mouse_delta[1] * SUBUNIT_STEP_FRACTION,
+                        )
                     if mouse_delta is not None:
                         max_step = (
                             MOUSE_MAX_STEP_WIDE
@@ -1267,6 +1387,10 @@ class GameMarkerController:
                             cursor = self.game_input.cursor()
                             self.game_input.move_cursor(cursor[0] + step_x, cursor[1] + step_y)
                             mouse_moved = True
+                            predicted = (
+                                round(previous[0] + step_x * mouse_vectors[0][0] + step_y * mouse_vectors[1][0]),
+                                round(previous[1] + step_x * mouse_vectors[0][1] + step_y * mouse_vectors[1][1]),
+                            )
                 if not mouse_moved:
                     action_keys, action_duration = self._plan_key_move(error, key_vectors)
                     if hasattr(self.game_input, "tap_keys"):
@@ -1280,15 +1404,18 @@ class GameMarkerController:
                 allow_single = (
                     OPT_SINGLE_OCR_FAR and err_norm >= SINGLE_OCR_MIN_ERROR
                 )
-                current = self._read_after_action(
-                    selection_box,
-                    selection_point,
-                    started,
-                    previous,
-                    settle_budget,
-                    require_stable=True,
-                    allow_single_read=allow_single,
-                )
+                if predicted is not None and math.hypot(predicted[0] - previous[0], predicted[1] - previous[1]) >= 3.0:
+                    current = self._read_toward(selection_box, selection_point, started, previous, predicted)
+                else:
+                    current = self._read_after_action(
+                        selection_box,
+                        selection_point,
+                        started,
+                        previous,
+                        settle_budget,
+                        require_stable=True,
+                        allow_single_read=allow_single,
+                    )
                 observed = (current[0] - previous[0], current[1] - previous[1])
                 self.timing.iteration_end(
                     action_keys if action_keys else (["mouse"] if mouse_moved else []),

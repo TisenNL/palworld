@@ -72,7 +72,7 @@ const playerPositionStatusText = computed(() => {
     case 'access_denied': return 'Player position access denied'
     case 'unsupported': return 'Live position requires Windows'
     case 'unsupported_build': return 'Palworld build not validated'
-    case 'waiting_for_overwolf': return 'Open the Palworld Overwolf app'
+    case 'waiting_for_player': return 'Waiting for player character'
     case 'invalid_position': return 'Player position needs revalidation'
     case 'probe_error': return 'Player position unavailable'
     default: return 'Player position unavailable'
@@ -407,6 +407,67 @@ async function toggleMouseLoop() {
 
         <!-- Category groups -->
         <template v-else>
+          <div
+            v-for="group in GROUPS"
+            :key="group"
+            class="filter-group"
+          >
+            <!-- Group header -->
+            <div class="filter-group__header">
+              <button
+                class="filter-group__toggle"
+                type="button"
+                :aria-expanded="mapStore.expandedGroups.has(group)"
+                @click="mapStore.toggleGroup(group)"
+              >
+                <svg
+                  class="filter-group__chevron"
+                  :class="{ 'filter-group__chevron--open': mapStore.expandedGroups.has(group) }"
+                  xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6"/>
+                </svg>
+                {{ GROUP_LABELS[group] }}
+                <span class="filter-group__progress">
+                  {{ mapStore.groupProgress[group]?.checked ?? 0 }}/{{ mapStore.groupProgress[group]?.total ?? 0 }}
+                </span>
+              </button>
+              <button
+                class="filter-group__all-btn"
+                type="button"
+                @click="mapStore.setGroupVisible(group, isGroupPartiallyVisible(group) ? false : true)"
+              >
+                {{ isGroupPartiallyVisible(group) ? 'Hide' : 'All' }}
+              </button>
+            </div>
+
+            <!-- Type list -->
+            <ul
+              v-show="mapStore.expandedGroups.has(group)"
+              class="filter-group__list"
+            >
+              <li
+                v-for="type in (mapStore.typesByGroup[group] ?? [])"
+                :key="type"
+              >
+                <button
+                  class="filter-type-btn"
+                  :class="{ 'filter-type-btn--active': isTypeActive(type), 'filter-type-btn--inactive': !isTypeActive(type) }"
+                  type="button"
+                  :aria-pressed="isTypeActive(type)"
+                  @click="mapStore.toggleType(type)"
+                >
+                  <span class="filter-type-btn__icon" :style="filterIconStyle(type)" aria-hidden="true" />
+                  <span class="filter-type-btn__label">
+                    {{ markerFilterLabel(type) }}
+                  </span>
+                  <span class="filter-type-btn__count">
+                    {{ mapStore.countsByType[type] ?? 0 }}
+                  </span>
+                </button>
+              </li>
+            </ul>
+          </div>
           <section class="filter-group map-locations-group">
             <div class="filter-group__header">
               <button
@@ -525,68 +586,6 @@ async function toggleMouseLoop() {
               </ul>
             </div>
           </section>
-
-          <div
-            v-for="group in GROUPS"
-            :key="group"
-            class="filter-group"
-          >
-            <!-- Group header -->
-            <div class="filter-group__header">
-              <button
-                class="filter-group__toggle"
-                type="button"
-                :aria-expanded="mapStore.expandedGroups.has(group)"
-                @click="mapStore.toggleGroup(group)"
-              >
-                <svg
-                  class="filter-group__chevron"
-                  :class="{ 'filter-group__chevron--open': mapStore.expandedGroups.has(group) }"
-                  xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
-                  fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="m6 9 6 6 6-6"/>
-                </svg>
-                {{ GROUP_LABELS[group] }}
-                <span class="filter-group__progress">
-                  {{ mapStore.groupProgress[group]?.checked ?? 0 }}/{{ mapStore.groupProgress[group]?.total ?? 0 }}
-                </span>
-              </button>
-              <button
-                class="filter-group__all-btn"
-                type="button"
-                @click="mapStore.setGroupVisible(group, isGroupPartiallyVisible(group) ? false : true)"
-              >
-                {{ isGroupPartiallyVisible(group) ? 'Hide' : 'All' }}
-              </button>
-            </div>
-
-            <!-- Type list -->
-            <ul
-              v-show="mapStore.expandedGroups.has(group)"
-              class="filter-group__list"
-            >
-              <li
-                v-for="type in (mapStore.typesByGroup[group] ?? [])"
-                :key="type"
-              >
-                <button
-                  class="filter-type-btn"
-                  :class="{ 'filter-type-btn--active': isTypeActive(type), 'filter-type-btn--inactive': !isTypeActive(type) }"
-                  type="button"
-                  :aria-pressed="isTypeActive(type)"
-                  @click="mapStore.toggleType(type)"
-                >
-                  <span class="filter-type-btn__icon" :style="filterIconStyle(type)" aria-hidden="true" />
-                  <span class="filter-type-btn__label">
-                    {{ markerFilterLabel(type) }}
-                  </span>
-                  <span class="filter-type-btn__count">
-                    {{ mapStore.countsByType[type] ?? 0 }}
-                  </span>
-                </button>
-              </li>
-            </ul>
-          </div>
         </template>
 
         <!-- Marker size slider -->

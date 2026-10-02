@@ -63,7 +63,7 @@ export const playerPositionStateSchema = z.object({
     'access_denied',
     'unsupported',
     'unsupported_build',
-    'waiting_for_overwolf',
+    'waiting_for_player',
     'invalid_position',
     'probe_error',
   ]),

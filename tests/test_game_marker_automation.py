@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -40,8 +41,8 @@ class FakeGameInput:
         dx = x - self.position[0]
         dy = y - self.position[1]
         self.position[:] = [x, y]
-        self.coordinate[0] += dx
-        self.coordinate[1] += dy
+        self.coordinate[0] += dx * 0.1
+        self.coordinate[1] += dy * 0.1
 
     def tap_key(self, key: str, duration: float) -> None:
         self.tap_keys([key], duration)
@@ -179,6 +180,40 @@ class GameMarkerAutomationTest(unittest.TestCase):
 
     def test_rejects_singular_mouse_calibration(self):
         self.assertIsNone(solve_mouse_delta((10, 10), (1, 1), (2, 2)))
+
+    def test_initial_read_trusts_single_ocr_matching_player_hint(self):
+        reads = []
+
+        def read_coordinate(_box):
+            reads.append(1)
+            return (101, 50)
+
+        controller = GameMarkerController(
+            read_coordinate,
+            lambda **_changes: None,
+            game_input=FakeGameInput(),
+            sleep=lambda _seconds: None,
+            position_hint=lambda: (100, 50),
+        )
+        self.assertEqual((101, 50), controller._read_initial((0, 0, 1, 1), (0, 0), time.monotonic()))
+        self.assertEqual(1, len(reads))
+
+    def test_initial_read_falls_back_when_ocr_disagrees_with_hint(self):
+        reads = []
+
+        def read_coordinate(_box):
+            reads.append(1)
+            return (300, 50)
+
+        controller = GameMarkerController(
+            read_coordinate,
+            lambda **_changes: None,
+            game_input=FakeGameInput(),
+            sleep=lambda _seconds: None,
+            position_hint=lambda: (100, 50),
+        )
+        self.assertEqual((300, 50), controller._read_initial((0, 0, 1, 1), (0, 0), time.monotonic()))
+        self.assertGreaterEqual(len(reads), 3)
 
     def test_accelerates_only_when_far_from_the_target(self):
         controller = GameMarkerController(lambda _box: (0, 0), lambda **_changes: None)
@@ -367,7 +402,8 @@ class GameMarkerAutomationTest(unittest.TestCase):
                         entry = load_calibration_cache()["monitors"].get("mouse-bad", {})
                         # Bad orientation must not remain; recalibrated mouse is 1:1 with FakeGameInput.
                         self.assertNotEqual([0.0, 1.0], entry.get("mouseX"))
-                        self.assertEqual([1.0, 0.0], entry.get("mouseX"))
+                        self.assertAlmostEqual(0.1, entry["mouseX"][0], places=2)
+                        self.assertAlmostEqual(0.0, entry["mouseX"][1], places=2)
 
     def test_divergence_invalidates_memory_and_disk_cache(self):
         game_input = FakeGameInput()
@@ -407,7 +443,7 @@ class GameMarkerAutomationTest(unittest.TestCase):
                         "D": (8.0, 0.0),
                         "A": (-8.0, 0.0),
                     }
-                    # Invert movement so each step increases error → 3 regressions.
+                    # Invert movement so each step increases error â†’ 3 regressions.
                     def bad_tap(keys, duration):
                         scale = duration / 0.08
                         vectors = {"W": (0, 8), "S": (0, -8), "D": (-8, 0), "A": (8, 0)}

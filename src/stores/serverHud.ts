@@ -115,7 +115,6 @@ export const useServerHudStore = defineStore('serverHud', () => {
   async function pollPlayerPosition(): Promise<void> {
     if (!playerPositionPollingEnabled || pollingPlayerPosition) return
     pollingPlayerPosition = true
-    stopPlayerPositionPolling()
     try {
       playerPosition.value = await api.getPlayerPositionState()
     } catch (cause) {

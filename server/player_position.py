@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import ctypes
 import hashlib
-import json
 import math
 import os
-import re
 import struct
 import threading
 import time
@@ -22,20 +20,30 @@ PROCESS_QUERY_LIMITED_INFORMATION = 0x00001000
 PROCESS_QUERY_INFORMATION = 0x00000400
 PROCESS_VM_READ = 0x00000010
 ERROR_ACCESS_DENIED = 5
+TH32CS_SNAPMODULE = 0x00000008
+TH32CS_SNAPMODULE32 = 0x00000010
 MEM_COMMIT = 0x1000
 PAGE_GUARD = 0x100
-READABLE_PROTECTIONS = {0x04, 0x08, 0x40, 0x80}
+READABLE_PROTECTIONS = {0x02, 0x04, 0x08, 0x20, 0x40, 0x80}
+EXECUTABLE_SECTION = 0x20000000
+GWORLD_SIGNATURE_PREFIX = b"\x48\x8b\x05"
+GWORLD_SIGNATURE_SUFFIX = b"\xeb\x05"
 
-# This exact build was validated against live Overwolf samples and character movement.
+# This exact build was validated against live player movement.
 SUPPORTED_EXECUTABLE_SHA256 = "e590b5e7bfaa3fea40fab1a02cc72c8fc5fd6f8631ef2308e95ac56c25195837"
+# Build-specific UE object offsets from GWorld through the local pawn.
+WORLD_GAME_INSTANCE_OFFSET = 0x1B8
+GAME_INSTANCE_LOCAL_PLAYERS_OFFSET = 0x38
+LOCAL_PLAYER_CONTROLLER_OFFSET = 0x30
+PLAYER_CONTROLLER_PAWN_OFFSET = 0x330
 ACTOR_POINTER_OFFSET = 0x30
 FIRST_OBJECT_POINTER_OFFSET = 0x2D0
 LOCATION_VECTOR_OFFSET = 0xA18
 PALPAGOS_BOUNDS = (-1_099_400.0, 349_400.0, -724_400.0, 724_400.0)
 WORLD_TREE_BOUNDS = (347_351.5, 689_148.5, -818_197.0, -476_400.0)
-OVERWOLF_PLAYER_MESSAGE = "Got first player "
 _BUILD_HASH_CACHE: dict[tuple[str, int, int], str] = {}
 _BUILD_HASH_LOCK = threading.Lock()
+_GWORLD_RVA_CACHE: dict[tuple[str, int, int], Optional[int]] = {}
 
 
 class PROCESSENTRY32W(ctypes.Structure):
@@ -63,6 +71,21 @@ class MEMORY_BASIC_INFORMATION(ctypes.Structure):
         ("State", wintypes.DWORD),
         ("Protect", wintypes.DWORD),
         ("Type", wintypes.DWORD),
+    ]
+
+
+class MODULEENTRY32W(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("th32ModuleID", wintypes.DWORD),
+        ("th32ProcessID", wintypes.DWORD),
+        ("GlblcntUsage", wintypes.DWORD),
+        ("ProccntUsage", wintypes.DWORD),
+        ("modBaseAddr", ctypes.POINTER(ctypes.c_byte)),
+        ("modBaseSize", wintypes.DWORD),
+        ("hModule", wintypes.HMODULE),
+        ("szModule", wintypes.WCHAR * 256),
+        ("szExePath", wintypes.WCHAR * 260),
     ]
 
 
@@ -151,57 +174,6 @@ def _position_status(
     }
 
 
-def _parse_overwolf_actor_address(lines: Iterable[str]) -> Optional[tuple[int, float]]:
-    latest: Optional[tuple[datetime, int]] = None
-    timestamp_pattern = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})")
-    for line in lines:
-        if OVERWOLF_PLAYER_MESSAGE not in line:
-            continue
-        timestamp_match = timestamp_pattern.match(line)
-        if timestamp_match is None:
-            continue
-        try:
-            sample_time = datetime.strptime(timestamp_match.group(1), "%Y-%m-%d %H:%M:%S,%f")
-            payload_start = line.index(OVERWOLF_PLAYER_MESSAGE) + len(OVERWOLF_PLAYER_MESSAGE)
-            message = json.loads(line[payload_start:])
-            address = message["payload"]["address"]
-        except (ValueError, KeyError, TypeError, json.JSONDecodeError):
-            continue
-        if isinstance(address, bool) or not isinstance(address, (int, float)):
-            continue
-        if not math.isfinite(address) or int(address) != address or address <= 0:
-            continue
-        if latest is None or sample_time > latest[0]:
-            latest = (sample_time, int(address))
-    if latest is None:
-        return None
-    return latest[1], time.mktime(latest[0].timetuple()) + latest[0].microsecond / 1_000_000
-
-
-def _find_overwolf_actor_address(log_root: Optional[Path] = None) -> Optional[tuple[int, float]]:
-    if log_root is None:
-        local_app_data = os.environ.get("LOCALAPPDATA")
-        if not local_app_data:
-            return None
-        log_root = Path(local_app_data) / "Overwolf" / "Log" / "Apps" / "Palworld"
-    if not log_root.is_dir():
-        return None
-
-    lines: list[str] = []
-    for path in log_root.glob("background.html*.log"):
-        try:
-            if path.stat().st_size > 2 * 1024 * 1024:
-                with path.open("rb") as log_file:
-                    log_file.seek(-2 * 1024 * 1024, os.SEEK_END)
-                    content = log_file.read().decode("utf-8", errors="replace")
-            else:
-                content = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        lines.extend(content.splitlines())
-    return _parse_overwolf_actor_address(lines)
-
-
 def _is_supported_executable(path: Path) -> bool:
     try:
         stat = path.stat()
@@ -221,6 +193,146 @@ def _is_supported_executable(path: Path) -> bool:
     return digest == SUPPORTED_EXECUTABLE_SHA256
 
 
+def _gworld_signature_offsets(data: bytes) -> list[int]:
+    offsets: list[int] = []
+    start = 0
+    while True:
+        offset = data.find(GWORLD_SIGNATURE_PREFIX, start)
+        if offset < 0:
+            return offsets
+        if data[offset + 7 : offset + 9] == GWORLD_SIGNATURE_SUFFIX:
+            offsets.append(offset)
+        start = offset + 1
+
+
+def _scan_gworld_signature(
+    executable,
+    raw_offset: int,
+    raw_size: int,
+    virtual_address: int,
+) -> list[int]:
+    executable.seek(raw_offset)
+    scanned = 0
+    carry = b""
+    found: list[int] = []
+    while scanned < raw_size:
+        chunk = executable.read(min(1024 * 1024, raw_size - scanned))
+        if not chunk:
+            break
+        combined = carry + chunk
+        previous_scanned = scanned
+        for offset in _gworld_signature_offsets(combined):
+            section_offset = previous_scanned - len(carry) + offset
+            if section_offset + 9 > previous_scanned:
+                found.append(virtual_address + section_offset)
+                if len(found) > 1:
+                    return found
+        scanned += len(chunk)
+        carry = combined[-8:]
+    return found
+
+
+def _find_gworld_signature_rva(executable_path: Path) -> Optional[int]:
+    try:
+        stat = executable_path.stat()
+    except OSError:
+        return None
+    cache_key = (str(executable_path).casefold(), stat.st_size, stat.st_mtime_ns)
+    with _BUILD_HASH_LOCK:
+        if cache_key in _GWORLD_RVA_CACHE:
+            return _GWORLD_RVA_CACHE[cache_key]
+
+    matches: list[int] = []
+    try:
+        with executable_path.open("rb") as executable:
+            executable.seek(0x3C)
+            dos_header_offset = executable.read(4)
+            if len(dos_header_offset) != 4:
+                return None
+            pe_offset = struct.unpack("<I", dos_header_offset)[0]
+            executable.seek(pe_offset)
+            pe_header = executable.read(24)
+            if len(pe_header) != 24 or pe_header[:4] != b"PE\0\0":
+                return None
+            section_count = struct.unpack_from("<H", pe_header, 6)[0]
+            optional_header_size = struct.unpack_from("<H", pe_header, 20)[0]
+            sections_offset = pe_offset + 24 + optional_header_size
+            for index in range(section_count):
+                executable.seek(sections_offset + index * 40)
+                section = executable.read(40)
+                if len(section) != 40:
+                    return None
+                virtual_address = struct.unpack_from("<I", section, 12)[0]
+                raw_size = struct.unpack_from("<I", section, 16)[0]
+                raw_offset = struct.unpack_from("<I", section, 20)[0]
+                characteristics = struct.unpack_from("<I", section, 36)[0]
+                if not characteristics & EXECUTABLE_SECTION or raw_size == 0:
+                    continue
+                matches.extend(
+                    _scan_gworld_signature(
+                        executable,
+                        raw_offset,
+                        raw_size,
+                        virtual_address,
+                    )
+                )
+                if len(matches) > 1:
+                    break
+    except (OSError, struct.error):
+        return None
+
+    result = matches[0] if len(matches) == 1 else None
+    with _BUILD_HASH_LOCK:
+        _GWORLD_RVA_CACHE.clear()
+        _GWORLD_RVA_CACHE[cache_key] = result
+    return result
+
+
+def _process_module_base(kernel32, pid: int, executable_path: Path) -> Optional[int]:
+    kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.Module32FirstW.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(MODULEENTRY32W),
+    ]
+    kernel32.Module32FirstW.restype = wintypes.BOOL
+    kernel32.Module32NextW.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(MODULEENTRY32W),
+    ]
+    kernel32.Module32NextW.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    snapshot = kernel32.CreateToolhelp32Snapshot(
+        TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
+        pid,
+    )
+    invalid_handle = ctypes.c_void_p(-1).value
+    if snapshot == invalid_handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        module = MODULEENTRY32W()
+        module.dwSize = ctypes.sizeof(module)
+        if not kernel32.Module32FirstW(snapshot, ctypes.byref(module)):
+            error = ctypes.get_last_error()
+            if error in (0, 18):
+                return None
+            raise ctypes.WinError(error)
+        expected_path = os.path.normcase(os.path.abspath(executable_path))
+        while True:
+            module_path = os.path.normcase(os.path.abspath(module.szExePath))
+            if module_path == expected_path:
+                return ctypes.cast(module.modBaseAddr, ctypes.c_void_p).value
+            if not kernel32.Module32NextW(snapshot, ctypes.byref(module)):
+                error = ctypes.get_last_error()
+                if error not in (0, 18):
+                    raise ctypes.WinError(error)
+                return None
+    finally:
+        kernel32.CloseHandle(snapshot)
+
+
 def _process_image_path(kernel32, handle) -> Optional[Path]:
     buffer = ctypes.create_unicode_buffer(32768)
     size = wintypes.DWORD(len(buffer))
@@ -234,34 +346,6 @@ def _process_image_path(kernel32, handle) -> Optional[Path]:
     if not kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
         return None
     return Path(buffer.value)
-
-
-def _process_start_time(kernel32, handle) -> Optional[float]:
-    class FILETIME(ctypes.Structure):
-        _fields_ = [("dwLowDateTime", wintypes.DWORD), ("dwHighDateTime", wintypes.DWORD)]
-
-    creation = FILETIME()
-    exit_time = FILETIME()
-    kernel_time = FILETIME()
-    user_time = FILETIME()
-    kernel32.GetProcessTimes.argtypes = [
-        wintypes.HANDLE,
-        ctypes.POINTER(FILETIME),
-        ctypes.POINTER(FILETIME),
-        ctypes.POINTER(FILETIME),
-        ctypes.POINTER(FILETIME),
-    ]
-    kernel32.GetProcessTimes.restype = wintypes.BOOL
-    if not kernel32.GetProcessTimes(
-        handle,
-        ctypes.byref(creation),
-        ctypes.byref(exit_time),
-        ctypes.byref(kernel_time),
-        ctypes.byref(user_time),
-    ):
-        return None
-    ticks = (creation.dwHighDateTime << 32) | creation.dwLowDateTime
-    return ticks / 10_000_000 - 11_644_473_600
 
 
 def _read_process_memory(kernel32, handle, address: int, size: int) -> Optional[bytes]:
@@ -334,6 +418,57 @@ def _read_player_position_from_memory(
     return x, y, z
 
 
+def _valid_pointer(value: int) -> bool:
+    return 0x10000 <= value <= 0x00007FFFFFFFFFFF and value % 8 == 0
+
+
+def _read_pointer(
+    address: int,
+    read_memory: Callable[[int, int], Optional[bytes]],
+) -> Optional[int]:
+    raw = read_memory(address, 8)
+    if raw is None or len(raw) != 8:
+        return None
+    pointer = struct.unpack("<Q", raw)[0]
+    return pointer if _valid_pointer(pointer) else None
+
+
+def _read_local_player_actor_address(
+    world_address: int,
+    read_memory: Callable[[int, int], Optional[bytes]],
+) -> Optional[int]:
+    game_instance = _read_pointer(
+        world_address + WORLD_GAME_INSTANCE_OFFSET,
+        read_memory,
+    )
+    if game_instance is None:
+        return None
+
+    local_players = read_memory(
+        game_instance + GAME_INSTANCE_LOCAL_PLAYERS_OFFSET,
+        16,
+    )
+    if local_players is None or len(local_players) != 16:
+        return None
+    local_players_data, count, capacity = struct.unpack("<Qii", local_players)
+    if not _valid_pointer(local_players_data) or not 1 <= count <= capacity <= 8:
+        return None
+
+    local_player = _read_pointer(local_players_data, read_memory)
+    if local_player is None:
+        return None
+    player_controller = _read_pointer(
+        local_player + LOCAL_PLAYER_CONTROLLER_OFFSET,
+        read_memory,
+    )
+    if player_controller is None:
+        return None
+    return _read_pointer(
+        player_controller + PLAYER_CONTROLLER_PAWN_OFFSET,
+        read_memory,
+    )
+
+
 def _read_player_position(kernel32, handle, actor_address: int) -> Optional[tuple[float, float, float]]:
     return _read_player_position_from_memory(
         actor_address,
@@ -383,6 +518,11 @@ def read_palworld_position() -> dict:
             "unsupported",
             error="Live player position is available on Windows only",
         )
+    if ctypes.sizeof(ctypes.c_void_p) != 8:
+        return _position_status(
+            "unsupported",
+            error="Live player position requires a 64-bit Python helper",
+        )
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
@@ -426,26 +566,57 @@ def read_palworld_position() -> dict:
                     error="This Palworld build has not been validated for live position reading",
                 )
 
-            actor = _find_overwolf_actor_address()
-            if actor is None:
+            signature_rva = _find_gworld_signature_rva(executable)
+            if signature_rva is None:
                 return _position_status(
-                    "waiting_for_overwolf",
+                    "probe_error",
                     pid=pid,
                     process_found=True,
                     read_access=True,
-                    error="Open the Palworld Overwolf app once to initialize the player reader",
+                    error="Could not locate a unique validated Unreal world signature",
                 )
-            actor_address, sample_time = actor
-            process_start = _process_start_time(kernel32, handle)
-            if process_start is not None and sample_time < process_start - 2:
+            module_base = _process_module_base(kernel32, pid, executable)
+            if module_base is None:
                 return _position_status(
-                    "waiting_for_overwolf",
+                    "probe_error",
                     pid=pid,
                     process_found=True,
                     read_access=True,
-                    error="Restart the Palworld Overwolf app to refresh its player reference",
+                    error="Could not locate the Palworld module in the game process",
                 )
 
+            def read_memory(address: int, size: int) -> Optional[bytes]:
+                return _read_process_memory(kernel32, handle, address, size)
+
+            instruction = read_memory(module_base + signature_rva, 9)
+            if (
+                instruction is None
+                or instruction[:3] != GWORLD_SIGNATURE_PREFIX
+                or instruction[7:9] != GWORLD_SIGNATURE_SUFFIX
+            ):
+                return _position_status(
+                    "unsupported_build",
+                    pid=pid,
+                    process_found=True,
+                    read_access=True,
+                    error="The loaded Palworld module does not match its validated world signature",
+                )
+            displacement = struct.unpack_from("<i", instruction, 3)[0]
+            world_global = module_base + signature_rva + 7 + displacement
+            world_address = _read_pointer(world_global, read_memory)
+            actor_address = (
+                _read_local_player_actor_address(world_address, read_memory)
+                if world_address is not None
+                else None
+            )
+            if actor_address is None:
+                return _position_status(
+                    "waiting_for_player",
+                    pid=pid,
+                    process_found=True,
+                    read_access=True,
+                    error="Waiting for the local player character to be available",
+                )
             position = _read_player_position(kernel32, handle, actor_address)
             if position is None:
                 return _position_status(

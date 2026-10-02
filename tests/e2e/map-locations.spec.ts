@@ -7,6 +7,9 @@ test('shows Pal and human locations and keeps map filters synchronized across zo
 
   const mapLocations = page.locator('.map-locations-group')
   await expect(mapLocations.getByRole('tab', { name: 'Pal Locations' })).toBeVisible()
+  await expect(page.locator('.map-sidebar .filter-group').last()).toHaveClass(
+    /map-locations-group/,
+  )
   const palOption = mapLocations
     .locator('.spawn-location-card')
     .filter({ hasText: /^Elphidran$/ })
@@ -50,7 +53,10 @@ test('shows Pal and human locations and keeps map filters synchronized across zo
 })
 
 test('shows the live player marker only on the matching map zone', async ({ page }) => {
+  let gameX = 0
+  let positionRequests = 0
   await page.route('**/player-position/state', async (route) => {
+    positionRequests += 1
     await route.fulfill({
       json: {
         ok: true,
@@ -59,7 +65,7 @@ test('shows the live player marker only on the matching map zone', async ({ page
         readAccess: true,
         pid: 123,
         position: {
-          gameX: 0,
+          gameX,
           gameY: 0,
           gameZ: 0,
           mapZone: 'palpagos',
@@ -73,6 +79,21 @@ test('shows the live player marker only on the matching map zone', async ({ page
   await page.goto('/map')
   const playerMarker = page.locator('.palworld-player-location')
   await expect(playerMarker).toHaveCount(1)
+
+  const initialRequests = positionRequests
+  gameX = 200_000
+  await expect.poll(() => positionRequests).toBeGreaterThan(initialRequests)
+  await expect.poll(() =>
+    playerMarker.evaluate((marker) => {
+      const markerRect = marker.getBoundingClientRect()
+      const mapRect = marker.closest('.palworld-map')?.getBoundingClientRect()
+      if (!mapRect) return Number.POSITIVE_INFINITY
+      return Math.hypot(
+        markerRect.left + markerRect.width / 2 - (mapRect.left + mapRect.width / 2),
+        markerRect.top + markerRect.height / 2 - (mapRect.top + mapRect.height / 2),
+      )
+    }),
+  ).toBeLessThan(3)
 
   await page.getByRole('button', { name: 'World Tree' }).click()
   await expect(playerMarker).toHaveCount(0)

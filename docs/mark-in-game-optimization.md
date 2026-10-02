@@ -13,6 +13,14 @@
 5. Confirmação: default sleep **0.5 s**. Pixel settle opcional (`PALWORLD_MARKER_ADAPTIVE_CONFIRM=1`):
    min 0.12 s + 2 frames consecutivos diferentes do baseline na ROI do Add.
 
+## Posição do jogador como dica inicial
+
+O mapa do jogo abre **centrado no jogador**: com o cursor no centro, o OCR e a posição lida da memória
+(`server/player_position.py`, convertida em `player_ingame_coordinate`) diferem em ≤ 1 unidade (medido no jogo).
+`GameMarkerController._read_initial` faz **1** leitura OCR e a aceita se estiver a ≤ `PLAYER_HINT_TOLERANCE` (3)
+da dica; senão (mapa já movido, leitor indisponível/build não suportada) cai na leitura estável de 2 OCRs.
+A dica só substitui a leitura inicial; o loop e o gate final continuam com OCR.
+
 ## Invalidação de cache
 
 Invalida memória+disco em: divergência, limite de iterações, OCR instável/ausente,
@@ -59,3 +67,12 @@ Instrumentação: `PALWORLD_MARKER_TIMING=1`.
 5. Reiniciar helper → 2ª run com cache disco (mais rápida, ainda exata)
 6. Resolução/monitor diferente → miss de cache / recalibra
 7. `PALWORLD_MARKER_ADAPTIVE_CONFIRM=1` → validar dialog Add no jogo
+
+## Movimento fino por mouse (zoom maximo)
+
+- Zoom maximo: 1 unidade ~ 12,3 px; o cursor no centro equivale a posicao do jogador.
+- Calibracao de mouse com sonda de 240 px (ate 3 tentativas) e espera do HUD (que atrasa em saltos grandes); `_read_toward` aguarda o valor previsto.
+- WASD so leva a <=40 unidades (`NEAR_FIELD`); o resto usa passos de mouse de ate 480 px, e com erro <=2,5 passos de 0,6x (a coordenada exibida e truncada, evita oscilar +-1).
+- Medido (dry-run, mapa aberto): alvos de 3 a ~180 unidades em 3-11 s, 5-14 iteracoes.
+
+- O controller abre o mapa sozinho (`_prepare_map`: M so se o OCR nao le nada, pois M alterna) e aplica 12 giros de roda para zoom maximo antes de ler a posicao. Testado com mapa fechado e aberto (dry-run).

@@ -46,10 +46,11 @@ so it sees no files and always exits 0. The `typecheck` script passes `-p tsconf
   web page could drive the mouse/keyboard automation or read/write `/progress`. A new dev origin
   means editing that set.
 - Live player tracking (`server/player_position.py`) is read-only, requires the validated Palworld
-  executable SHA-256, and gets its initial actor address from the local Overwolf Palworld app log.
-  It follows only the validated actor-relative pointer chain; do not replace this with an
-  unrestricted process-memory scan. A game update must be revalidated before changing the build
-  fingerprint or offsets.
+  executable SHA-256, resolves the Unreal world through one unique executable signature, then
+  follows the validated world-to-local-player and actor-relative pointer chains. It does not
+  require Overwolf and must not be replaced with an unrestricted process-memory scan. A game update
+  must be revalidated before changing the build fingerprint, signature, or offsets. Full
+  procedure, offsets and past bugs: `docs/live-player-position.md`.
 - `src/domain/` is pure logic (no Vue/Pinia imports) — keep it that way; it's the only thing
   coverage measures (`src/domain/**` + `src/stores/**`).
 - Zod schemas live beside their types in `src/types/*.ts` and are the validation layer for all

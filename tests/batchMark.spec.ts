@@ -8,6 +8,7 @@ import type { GameMarkerState } from '../src/types/server'
 const apiMocks = vi.hoisted(() => ({
   startGameMarker: vi.fn<(x: number, y: number, dryRun?: boolean) => Promise<void>>(),
   getGameMarkerState: vi.fn<() => Promise<unknown>>(),
+  getPlayerPositionState: vi.fn<() => Promise<unknown>>(),
   cancelGameMarker: vi.fn<() => Promise<void>>(),
 }))
 
@@ -51,7 +52,41 @@ describe('serverHud batch mark queue', () => {
     localStorage.clear()
     apiMocks.startGameMarker.mockResolvedValue(undefined)
     apiMocks.getGameMarkerState.mockResolvedValue(gmState())
+    apiMocks.getPlayerPositionState.mockResolvedValue({
+      ok: true,
+      status: 'ready',
+      processFound: true,
+      readAccess: true,
+      pid: 123,
+      position: {
+        gameX: 100,
+        gameY: 200,
+        gameZ: 300,
+        mapZone: 'palpagos',
+        updatedAt: '2026-10-02T12:00:00.000Z',
+      },
+      error: '',
+    })
     apiMocks.cancelGameMarker.mockResolvedValue(undefined)
+  })
+
+  it('continues polling the live player position until stopped', async () => {
+    vi.useFakeTimers()
+    const store = useServerHudStore()
+
+    store.startPlayerPositionPolling()
+    await vi.waitFor(() => expect(apiMocks.getPlayerPositionState).toHaveBeenCalledTimes(1))
+
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(apiMocks.getPlayerPositionState).toHaveBeenCalledTimes(2)
+    expect(store.playerPosition?.status).toBe('ready')
+
+    store.stopPlayerPositionPolling()
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(apiMocks.getPlayerPositionState).toHaveBeenCalledTimes(2)
+    vi.useRealTimers()
   })
 
   describe('enqueueBatch', () => {
