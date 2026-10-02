@@ -17,7 +17,6 @@ const COORD_LABELS: Record<string, string> = {
 const WAIT_FIELDS = [
   { key: 'afterThrow', label: 'Lançar→ataque', title: 'Espera após lançar o Pal, antes do ataque (s)' },
   { key: 'wait1', label: 'Espera 1', title: 'Espera 1 após o ataque, antes do Esc (s)' },
-  { key: 'afterYes', label: 'Pós-Yes', title: 'Espera após clicar em Yes (s)' },
   { key: 'wait2', label: 'Espera 2', title: 'Espera 2 no fim da sequência (s)' },
 ] as const
 
@@ -105,7 +104,7 @@ onBeforeUnmount(() => loop.stopPolling())
 .autoloop__waits {
   display: grid;
   gap: 4px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-bottom: 4px;
 }
 .autoloop__field {

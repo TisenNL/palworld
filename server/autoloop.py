@@ -24,8 +24,11 @@ OCR_TARGETS: dict[str, tuple[str, ...]] = {
     "START_GAME_2": ("Start Game",),
 }
 OCR_FIND_TIMEOUT = 20.0
+VISIBLE_HALF_W = 150
+VISIBLE_HALF_H = 24
+VISIBLE_POLL = 0.0
 OCR_RETRY_PAUSE = 0.4
-OCR_MAX_WIDTH = 1600
+OCR_MAX_WIDTH = 1280
 OCR_MIN_SCORE = 0.5
 OCR_FUZZY_RATIO = 0.8
 
@@ -55,15 +58,14 @@ STEPS = (
     "Esc",
     "Return to Title",
     "Yes",
-    "Espera após Yes",
     "Start Game",
     "Palpagos Islands",
     "Start Game",
     "Espera 2",
 )
-WAIT_STEPS = frozenset({1, 3, 7, 11})
-WAIT_KEYS = ("afterThrow", "wait1", "afterYes", "wait2")
-DEFAULT_WAITS = {"afterThrow": 2.0, "wait1": 0.0, "afterYes": 3.0, "wait2": 0.0}
+WAIT_STEPS = frozenset({1, 3, 10})
+WAIT_KEYS = ("afterThrow", "wait1", "wait2")
+DEFAULT_WAITS = {"afterThrow": 2.0, "wait1": 0.0, "wait2": 0.0}
 
 
 def _norm(text: str) -> str:
@@ -96,6 +98,25 @@ def pick_match(
 
 
 _ocr_engine = None
+
+
+_ocr_rec_engine = None
+
+
+def _ocr_line_matches(image: Image.Image, wanted: tuple[str, ...]) -> bool:
+    """Só reconhecimento (sem detecção/classificador) numa região justa: poucos ms por leitura."""
+    global _ocr_rec_engine
+    import numpy as np
+    from rapidocr_onnxruntime import RapidOCR
+
+    if _ocr_rec_engine is None:
+        _ocr_rec_engine = RapidOCR(use_text_det=False, use_angle_cls=False)
+    result, _elapsed = _ocr_rec_engine(np.asarray(image))
+    for entry in result or []:
+        text, score = str(entry[-2]), float(entry[-1])
+        if score >= OCR_MIN_SCORE and any(text_matches(text, w) for w in wanted):
+            return True
+    return False
 
 
 def _ocr_items(image: Image.Image) -> list[tuple[str, float, float, float]]:
@@ -364,6 +385,35 @@ class AutoLoop:
                 self._coords = dict(AUTOLOOP_COORDS)
                 self._coords_size = size
 
+    @staticmethod
+    def _preload_ocr() -> None:
+        try:
+            _ocr_line_matches(Image.new("RGB", (160, 48)), ())
+        except Exception:
+            pass
+
+    def _wait_visible(self, name: str, known: tuple[int, int]) -> bool:
+        """Espera o texto aparecer perto da posição aprendida (OCR só numa faixa pequena)."""
+        from .coord_tooltip import grab_bbox_rgb
+
+        label = OCR_TARGETS[name][0]
+        deadline = time.monotonic() + OCR_FIND_TIMEOUT
+        while True:
+            deadline += self._checkpoint()
+            left, top, right, bottom = self._window_rect()
+            cx, cy = left + known[0], top + known[1]
+            box = (
+                max(left, cx - VISIBLE_HALF_W), max(top, cy - VISIBLE_HALF_H),
+                min(right, cx + VISIBLE_HALF_W), min(bottom, cy + VISIBLE_HALF_H),
+            )
+            if box[2] - box[0] > 20 and box[3] - box[1] > 10:
+                if _ocr_line_matches(grab_bbox_rgb(box), OCR_TARGETS[name]):
+                    return True
+            if time.monotonic() >= deadline:
+                return False
+            self._set(message=f'Aguardando "{label}" aparecer…')
+            self._wait(VISIBLE_POLL)
+
     def _click_text(self, name: str) -> None:
         """Usa a posição já aprendida; senão acha o texto por OCR (1ª vez), guarda e clica."""
         label = OCR_TARGETS[name][0]
@@ -371,11 +421,16 @@ class AutoLoop:
         self._use_window_size((right - left, bottom - top))
         known = self._coords.get(name)
         if known is not None:
-            self._checkpoint()
-            self.game_input.move_cursor(left + known[0], top + known[1])
-            self._wait(0.08)
-            self._press_left(0.05)
-            return
+            if self._wait_visible(name, known):
+                self._checkpoint()
+                left, top, _r, _b = self._window_rect()
+                self.game_input.move_cursor(left + known[0], top + known[1])
+                self._wait(0.08)
+                self._press_left(0.05)
+                return
+            # Não apareceu na posição aprendida: descarta e tenta o OCR da janela inteira.
+            with self._lock:
+                self._coords.pop(name, None)
         deadline = time.monotonic() + OCR_FIND_TIMEOUT
         while True:
             deadline += self._checkpoint()
@@ -412,6 +467,7 @@ class AutoLoop:
             if not self.game_input.focus_game():
                 raise AutoLoopError("Janela do Palworld não encontrada ou sem foco")
             self._f10_prev = bool(self.game_input.user32.GetAsyncKeyState(VK_F10) & 0x8000)
+            threading.Thread(target=self._preload_ocr, daemon=True).start()  # carrega o modelo agora, não no meio do loop
             actions = (
                 lambda: self.game_input.tap_key("E", 0.05),
                 lambda: self._wait(self._waits["afterThrow"]),
@@ -420,7 +476,6 @@ class AutoLoop:
                 lambda: self.game_input.tap_key("ESCAPE", 0.05),
                 lambda: self._click_text("RETURN_TO_TITLE"),
                 lambda: self._click_text("YES"),
-                lambda: self._wait(self._waits["afterYes"]),
                 lambda: self._click_text("START_GAME"),
                 lambda: self._click_text("PALPAGOS_ISLANDS"),
                 lambda: self._click_text("START_GAME_2"),
