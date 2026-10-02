@@ -1022,7 +1022,7 @@ def fetch_map_icon_bytes(url: str) -> bytes:
     cached = ICON_BYTES_CACHE.get(key)
     if cached is not None:
         return cached
-    digest = hashlib.sha1(url.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
     ext = Path(parsed.path).suffix.lower() or ".webp"
     if ext not in (".webp", ".png", ".jpg", ".jpeg", ".svg", ".gif"):
         ext = ".webp"
