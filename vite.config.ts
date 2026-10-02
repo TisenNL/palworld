@@ -15,6 +15,7 @@ const helperRoutes = [
   '/game-marker',
   '/player-position',
   '/mouse-loop',
+  '/autoloop',
   '/map-tile',
   '/map-icon',
 ]

@@ -7,6 +7,7 @@
 import { useToast } from 'primevue/usetoast'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import AutoLoopPanel from '@/components/map/AutoLoopPanel.vue'
 import LeafletMapView from '@/components/map/LeafletMapView.vue'
 import { useOpggMapStore } from '@/stores/opggMap'
 import { useServerHudStore } from '@/stores/serverHud'
@@ -663,6 +664,8 @@ async function toggleMouseLoop() {
                 </svg>
               </button>
             </div>
+
+            <AutoLoopPanel />
 
             <!-- Mark selected marker(s) in game -->
             <div class="tools-section-label">{{ markButtonText }}</div>

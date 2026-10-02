@@ -23,6 +23,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, unquote, urlparse
 
 from PIL import Image, ImageFilter, ImageGrab, ImageOps
+from .autoloop import DEFAULT_INPUT_DELAY, DEFAULT_WAITS, WAIT_KEYS, AutoLoop, AutoLoopError
 from .game_marker_automation import GameMarkerController, MouseComboLoop, WindowsGameInput
 from .marker_timing import (
     MARKER_TIMING,
@@ -148,6 +149,7 @@ mouse_loop_state = {
     "error": "",
 }
 mouse_loop_controller: Optional[MouseComboLoop] = None
+autoloop_controller: Optional[AutoLoop] = None
 
 
 def update_game_marker_state(**changes) -> None:
@@ -1214,6 +1216,13 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"ok": True, **snap})
             return
 
+        if parsed.path == "/autoloop/status":
+            if autoloop_controller is None:
+                self._json(503, {"ok": False, "error": "Auto Loop indisponível"})
+                return
+            self._json(200, {"ok": True, **autoloop_controller.snapshot()})
+            return
+
         if parsed.path.startswith("/health") or parsed.path.startswith("/state"):
             with state_lock:
                 snap = dict(state)
@@ -1334,7 +1343,9 @@ class Handler(BaseHTTPRequestHandler):
                 busy = bool(game_marker_state["active"])
             with ocr_lock:
                 ocr_busy = ocr_state["status"] in ("selecting", "reading")
-            if busy or ocr_busy or game_marker_controller.active:
+            if busy or ocr_busy or game_marker_controller.active or (
+                autoloop_controller is not None and autoloop_controller.busy
+            ):
                 self._json(409, {"ok": False, "error": "OCR or game marker automation is active"})
                 return
             confirm = not bool(body.get("dryRun", False))
@@ -1379,6 +1390,66 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"ok": True, "status": "cancelled"})
             return
 
+        if self.path.startswith("/autoloop/start"):
+            if autoloop_controller is None:
+                self._json(503, {"ok": False, "error": "Auto Loop indisponível"})
+                return
+            try:
+                waits = {
+                    k: max(0.0, min(3600.0, float(body.get(k, DEFAULT_WAITS[k]))))
+                    for k in WAIT_KEYS
+                }
+                delay = max(0.0, min(5.0, float(body.get("inputDelay", DEFAULT_INPUT_DELAY))))
+            except (TypeError, ValueError):
+                self._json(400, {"ok": False, "error": "Valores de espera inválidos"})
+                return
+            with game_marker_lock:
+                gm_busy = bool(game_marker_state["active"])
+            with ocr_lock:
+                ocr_busy = ocr_state["status"] in ("selecting", "reading")
+            if gm_busy or ocr_busy or (mouse_loop_controller and mouse_loop_controller.active):
+                self._json(409, {"ok": False, "error": "Outra automação já está ativa"})
+                return
+            try:
+                autoloop_controller.start(waits, delay)
+            except AutoLoopError as exc:
+                busy = "já está ativo" in str(exc)
+                self._json(409 if busy else 400, {"ok": False, "error": str(exc)})
+                return
+            self._json(200, {"ok": True, "status": "running"})
+            return
+
+        if self.path.startswith("/autoloop/stop"):
+            if autoloop_controller is not None:
+                autoloop_controller.stop()
+            self._json(200, {"ok": True, "status": "stopping"})
+            return
+
+        if self.path.startswith("/autoloop/reset"):
+            if autoloop_controller is None:
+                self._json(503, {"ok": False, "error": "Auto Loop indisponível"})
+                return
+            try:
+                autoloop_controller.reset_positions()
+            except AutoLoopError as exc:
+                self._json(409, {"ok": False, "error": str(exc)})
+                return
+            self._json(200, {"ok": True, "status": "reset"})
+            return
+
+        if self.path.startswith("/autoloop/calibrate"):
+            if autoloop_controller is None:
+                self._json(503, {"ok": False, "error": "Auto Loop indisponível"})
+                return
+            try:
+                autoloop_controller.calibrate(str(body.get("target", "")))
+            except AutoLoopError as exc:
+                busy = "já está ativo" in str(exc)
+                self._json(409 if busy else 400, {"ok": False, "error": str(exc)})
+                return
+            self._json(200, {"ok": True, "status": "calibrating"})
+            return
+
         if self.path.startswith("/mouse-loop/start"):
             if mouse_loop_controller is None:
                 self._json(503, {"ok": False, "error": "Mouse loop unavailable"})
@@ -1393,7 +1464,9 @@ class Handler(BaseHTTPRequestHandler):
                 gm_busy = bool(game_marker_state["active"])
             with ocr_lock:
                 ocr_busy = ocr_state["status"] in ("selecting", "reading")
-            if gm_busy or ocr_busy or mouse_loop_controller.active:
+            if gm_busy or ocr_busy or mouse_loop_controller.active or (
+                autoloop_controller is not None and autoloop_controller.busy
+            ):
                 self._json(409, {"ok": False, "error": "Another automation is already active"})
                 return
             update_mouse_loop_state(
@@ -1513,7 +1586,11 @@ def _warmup_ocr() -> None:
 
 
 def main() -> None:
-    global overlay, ocr_selector, game_marker_controller, mouse_loop_controller
+    global overlay, ocr_selector, game_marker_controller, mouse_loop_controller, autoloop_controller
+    try:
+        autoloop_controller = AutoLoop()
+    except Exception as exc:
+        print(f"Auto Loop init skipped: {exc}", flush=True)
     try:
         overlay = HudTooltip()
         ocr_selector = OcrSelector(overlay.root)

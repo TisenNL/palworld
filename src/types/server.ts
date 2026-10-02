@@ -47,6 +47,21 @@ export const mouseLoopStateSchema = z.object({
   error: z.string().default(''),
 })
 
+export const autoLoopStateSchema = z.object({
+  ok: z.boolean(),
+  active: z.boolean(),
+  calibrating: z.boolean().default(false),
+  status: z.enum(['idle', 'running', 'paused', 'calibrating', 'stopped', 'error']),
+  step: z.string().default(''),
+  stepIndex: z.number().int().default(-1),
+  iterations: z.number().int().nonnegative().default(0),
+  message: z.string().default(''),
+  error: z.string().default(''),
+  coords: z.record(z.string(), z.tuple([z.number(), z.number()]).nullable()).default({}),
+  missingCoords: z.array(z.string()).default([]),
+  steps: z.array(z.string()).default([]),
+})
+
 export const playerPositionSchema = z.object({
   gameX: z.number().finite(),
   gameY: z.number().finite(),
@@ -78,5 +93,6 @@ export type HealthState = z.infer<typeof healthSchema>
 export type OcrState = z.infer<typeof ocrStateSchema>
 export type GameMarkerState = z.infer<typeof gameMarkerStateSchema>
 export type MouseLoopState = z.infer<typeof mouseLoopStateSchema>
+export type AutoLoopState = z.infer<typeof autoLoopStateSchema>
 export type PlayerPosition = z.infer<typeof playerPositionSchema>
 export type PlayerPositionState = z.infer<typeof playerPositionStateSchema>

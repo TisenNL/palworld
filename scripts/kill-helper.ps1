@@ -13,7 +13,7 @@ Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinu
   if (-not $owner) { return }
   # Só mata se for mesmo o helper (python). Qualquer outro serviço que use a
   # porta permanece intacto.
-  if ($owner.Name -match '^(python|py)w?\d*\.exe$') {
+  if ($owner.Name -match '^(python|py)w?\d*(\.exe)?$') {
     Write-Host ("KILL port$port $($owner.Id) ($($owner.Name))")
     Stop-Process -Id $owner.Id -Force -ErrorAction SilentlyContinue
   } else {
