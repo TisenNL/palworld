@@ -43,6 +43,7 @@ export const preferencesSchema = z.object({
   sideBlockOpen: z.record(z.string(), z.boolean()).default({}),
   mapBrowseGroup: z.string().default(''),
   listBrowseGroup: z.string().default(''),
+  listBrowseLayer: z.string().default(''),
 })
 
 const cakeValuesSchema = z.record(z.string(), z.number().nonnegative()).default({})

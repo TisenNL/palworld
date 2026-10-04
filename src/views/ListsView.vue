@@ -20,15 +20,24 @@ const preferences = usePreferencesStore()
 const route = useRoute()
 const toast = useToast()
 const query = ref('')
-const layerId = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 const scroller = ref<InstanceType<typeof VirtualScroller> | null>(null)
+
+// Conectado diretamente à store de preferências
+const layerId = computed({
+  get: () => preferences.values.listBrowseLayer ?? '',
+  set: (value: string) => {
+    preferences.values.listBrowseLayer = value
+  },
+})
 
 const group = computed({
   get: () => preferences.values.listBrowseGroup,
   set: (value: string) => {
-    preferences.values.listBrowseGroup = value
-    layerId.value = ''
+    if (preferences.values.listBrowseGroup !== value) {
+      preferences.values.listBrowseGroup = value
+      preferences.values.listBrowseLayer = ''
+    }
   },
 })
 
@@ -398,7 +407,7 @@ watch(
 }
 
 .layer-button {
-  justify-content: start;
+  justify-content: flex-start;
 }
 
 .category-section .layer-list {

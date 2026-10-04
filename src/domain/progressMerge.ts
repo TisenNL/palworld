@@ -74,6 +74,7 @@ function mergePreferences(base: Preferences, local: Preferences, remote: Prefere
     sideBlockOpen: mergeBooleanMap(base.sideBlockOpen, local.sideBlockOpen, remote.sideBlockOpen),
     mapBrowseGroup: changed(base.mapBrowseGroup, local.mapBrowseGroup, remote.mapBrowseGroup),
     listBrowseGroup: changed(base.listBrowseGroup, local.listBrowseGroup, remote.listBrowseGroup),
+    listBrowseLayer: changed(base.listBrowseLayer, local.listBrowseLayer, remote.listBrowseLayer),
   }
 }
 
