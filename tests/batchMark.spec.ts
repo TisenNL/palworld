@@ -89,6 +89,22 @@ describe('serverHud batch mark queue', () => {
     vi.useRealTimers()
   })
 
+  it('stops live position polling when disabled and persists the setting', async () => {
+    vi.useFakeTimers()
+    const store = useServerHudStore()
+    store.startPlayerPositionPolling()
+    await vi.waitFor(() => expect(apiMocks.getPlayerPositionState).toHaveBeenCalledTimes(1))
+
+    store.setPlayerPositionTracking(false)
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(store.playerPosition).toBeNull()
+    expect(store.playerPositionTracking).toBe(false)
+    expect(localStorage.getItem('palworld:map:player-position-tracking')).toBe('false')
+    expect(apiMocks.getPlayerPositionState).toHaveBeenCalledTimes(1)
+    vi.useRealTimers()
+  })
+
   describe('enqueueBatch', () => {
     it('accepts a homogeneous queue', () => {
       const store = useServerHudStore()

@@ -7,6 +7,7 @@
 import { useToast } from 'primevue/usetoast'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import ArenaLoopPanel from '@/components/map/ArenaLoopPanel.vue'
 import AutoLoopPanel from '@/components/map/AutoLoopPanel.vue'
 import LeafletMapView from '@/components/map/LeafletMapView.vue'
 import { useOpggMapStore } from '@/stores/opggMap'
@@ -65,6 +66,7 @@ const markerSizeSliderStyle = computed(() => ({
 }))
 
 const playerPositionStatusText = computed(() => {
+  if (!server.playerPositionTracking) return 'Live player position tracking is off'
   const status = server.playerPosition?.status
   if (!status) return 'Checking player position…'
   switch (status) {
@@ -382,12 +384,23 @@ async function toggleMouseLoop() {
 
         <div
           class="player-position-status"
-          :class="{ 'player-position-status--ready': server.playerPosition?.status === 'ready' }"
+          :class="{
+            'player-position-status--ready': server.playerPosition?.status === 'ready',
+            'player-position-status--off': !server.playerPositionTracking,
+          }"
           role="status"
         >
           <span class="player-position-status__dot" />
           <span>{{ playerPositionStatusText }}</span>
         </div>
+        <button
+          type="button"
+          class="player-position-toggle"
+          :aria-pressed="server.playerPositionTracking"
+          @click="server.setPlayerPositionTracking(!server.playerPositionTracking)"
+        >
+          {{ server.playerPositionTracking ? 'Disable position tracking' : 'Enable position tracking' }}
+        </button>
 
         <!-- Search -->
         <div class="map-sidebar__search">
@@ -666,6 +679,7 @@ async function toggleMouseLoop() {
             </div>
 
             <AutoLoopPanel />
+            <ArenaLoopPanel />
 
             <!-- Mark selected marker(s) in game -->
             <div class="tools-section-label">{{ markButtonText }}</div>
@@ -953,6 +967,28 @@ async function toggleMouseLoop() {
 
 .player-position-status--ready .player-position-status__dot {
   background: #22c55e;
+}
+.player-position-status--off {
+  color: #7777aa;
+}
+.player-position-status--off .player-position-status__dot {
+  background: #7777aa;
+}
+.player-position-toggle {
+  width: 100%;
+  margin: 0.45rem 0 0.7rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #34344d;
+  border-radius: 6px;
+  background: #171727;
+  color: #c5c5df;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.player-position-toggle:hover {
+  background: #252535;
   box-shadow: 0 0 7px #22c55e88;
 }
 

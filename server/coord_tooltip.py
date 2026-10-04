@@ -24,6 +24,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, unquote, urlparse
 
 from PIL import Image, ImageFilter, ImageGrab, ImageOps
+from .arena_loop import ArenaLoop, validate_config as validate_arena_config
 from .autoloop import DEFAULT_INPUT_DELAY, DEFAULT_WAITS, WAIT_KEYS, AutoLoop, AutoLoopError
 from .game_marker_automation import GameMarkerController, MouseComboLoop, WindowsGameInput
 from .marker_timing import (
@@ -154,6 +155,7 @@ mouse_loop_state = {
 }
 mouse_loop_controller: Optional[MouseComboLoop] = None
 autoloop_controller: Optional[AutoLoop] = None
+arena_controller: Optional[ArenaLoop] = None
 
 
 def update_game_marker_state(**changes) -> None:
@@ -1236,6 +1238,13 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"ok": True, **snap})
             return
 
+        if parsed.path == "/arena/status":
+            if arena_controller is None:
+                self._json(503, {"ok": False, "error": "Arena Loop indispon?vel"})
+                return
+            self._json(200, {"ok": True, **arena_controller.snapshot()})
+            return
+
         if parsed.path == "/autoloop/status":
             if autoloop_controller is None:
                 self._json(503, {"ok": False, "error": "Auto Loop indisponível"})
@@ -1408,6 +1417,38 @@ class Handler(BaseHTTPRequestHandler):
                     error="",
                 )
             self._json(200, {"ok": True, "status": "cancelled"})
+            return
+
+        if self.path.startswith("/arena/start"):
+            if arena_controller is None:
+                self._json(503, {"ok": False, "error": "Arena Loop indispon?vel"})
+                return
+            try:
+                cfg = validate_arena_config(body)
+            except AutoLoopError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+                return
+            with game_marker_lock:
+                gm_busy = bool(game_marker_state["active"])
+            with ocr_lock:
+                ocr_busy = ocr_state["status"] in ("selecting", "reading")
+            if gm_busy or ocr_busy or (mouse_loop_controller and mouse_loop_controller.active) or (
+                autoloop_controller is not None and autoloop_controller.busy
+            ):
+                self._json(409, {"ok": False, "error": "Outra automa??o j? est? ativa"})
+                return
+            try:
+                arena_controller.start(cfg)
+            except AutoLoopError as exc:
+                self._json(409 if "j? est? ativo" in str(exc) else 400, {"ok": False, "error": str(exc)})
+                return
+            self._json(200, {"ok": True, "status": "running"})
+            return
+
+        if self.path.startswith("/arena/stop"):
+            if arena_controller is not None:
+                arena_controller.stop()
+            self._json(200, {"ok": True, "status": "stopping"})
             return
 
         if self.path.startswith("/autoloop/start"):
@@ -1606,11 +1647,15 @@ def _warmup_ocr() -> None:
 
 
 def main() -> None:
-    global overlay, ocr_selector, game_marker_controller, mouse_loop_controller, autoloop_controller
+    global overlay, ocr_selector, game_marker_controller, mouse_loop_controller, autoloop_controller, arena_controller
     try:
         autoloop_controller = AutoLoop()
     except Exception as exc:
         print(f"Auto Loop init skipped: {exc}", flush=True)
+    try:
+        arena_controller = ArenaLoop()
+    except Exception as exc:
+        print(f"Arena Loop init skipped: {exc}", flush=True)
     try:
         overlay = HudTooltip()
         ocr_selector = OcrSelector(overlay.root)

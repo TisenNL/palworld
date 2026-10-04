@@ -88,13 +88,14 @@ describe('cake calculator', () => {
     expect(result.honeyCap).toBe(5)
     expect(result.maximum).toBe(5)
     expect(result.wheatNeeded).toBe(0)
-    expect(result.purchases.wheat).toBeUndefined()
+    expect(result.purchases.wheat).toBe(0)
   })
 
-  it('keeps flour and wheat independent and projects wheat for the target', () => {
+  it('uses existing flour and wheat before projecting wheat for the target', () => {
     const stock = {
       ...emptyStock,
       flour: 2,
+      wheat: 3,
       berry: 40,
       milk: 35,
       egg: 40,
@@ -102,11 +103,24 @@ describe('cake calculator', () => {
     }
     const result = calculateCakes(0, 5, cakeRecipes[0]!, stock, priceDefaults)
 
-    expect(result.maximum).toBe(2)
-    expect(result.amount).toBe(2)
-    expect(result.shortfall).toBe(3)
-    expect(result.wheatNeeded).toBe(9)
-    expect(result.purchases.wheat).toBeUndefined()
+    expect(result.maximum).toBe(3)
+    expect(result.amount).toBe(3)
+    expect(result.shortfall).toBe(2)
+    expect(result.wheatNeeded).toBe(6)
+    expect(result.purchases.wheat).toBe(0)
+  })
+
+  it('includes wheat price when calculating the maximum', () => {
+    const prices = { ...priceDefaults, wheat: 59, berry: 0, milk: 0, egg: 0 }
+    const result = calculateCakes(176, 0, cakeRecipes[0]!, emptyStock, prices)
+    expect(result.maximum).toBe(0)
+    expect(result.unitCost).toBe(177)
+    expect(result.purchases.wheat).toBe(0)
+
+    const enoughGold = calculateCakes(177, 0, cakeRecipes[0]!, emptyStock, prices)
+    expect(enoughGold.maximum).toBe(1)
+    expect(enoughGold.purchases.wheat).toBe(3)
+    expect(enoughGold.spent).toBe(177)
   })
 
   it('uses inventory before spending gold', () => {
@@ -128,6 +142,15 @@ describe('cake calculator', () => {
       expect(card.text()).not.toContain('Price')
       expect(card.findAll('label')).toHaveLength(1)
     }
+  })
+
+  it('shows a price input and subtotal for wheat', () => {
+    setActivePinia(createPinia())
+    const wrapper = mount(CakesView)
+    const wheatCard = wrapper.findAll('.ingredient-card').find((card) => card.text().includes('Wheat'))
+
+    expect(wheatCard?.findAll('label')).toHaveLength(2)
+    expect(wheatCard?.text()).toContain('Price')
   })
 })
 

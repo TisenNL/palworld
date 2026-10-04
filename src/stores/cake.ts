@@ -134,6 +134,10 @@ export const useCakeStore = defineStore('cake', () => {
     for (const item of recipe.value.ingredients) {
       stock[item.stock] += result.value.purchases[item.key] ?? 0
     }
+    const flourToMill = Math.max(0, result.value.amount * recipe.value.flourPer - stock.flour)
+    stock.wheat += result.value.purchases.wheat ?? 0
+    stock.wheat -= flourToMill * 3
+    stock.flour += flourToMill
     gold.value = result.value.remaining
   }
 

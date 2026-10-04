@@ -155,6 +155,9 @@ function purchasesFor(
     values[item.key] = quantity
     spent += quantity * prices[item.price]
   }
+  const wheat = Math.max(0, (amount * recipe.flourPer - stock.flour) * 3 - stock.wheat)
+  values.wheat = wheat
+  spent += wheat * prices.wheat
   return { values, spent }
 }
 
@@ -165,12 +168,15 @@ export function calculateCakes(
   stock: CakeValues,
   prices: CakeValues,
 ): CakeCalculation {
-  const unitCost = recipe.ingredients.reduce((sum, item) => sum + item.per * prices[item.price], 0)
+  const unitCost =
+    recipe.ingredients.reduce((sum, item) => sum + item.per * prices[item.price], 0) +
+    recipe.flourPer * 3 * prices.wheat
   const honeyCap =
     recipe.honeyPer > 0 && stock.honey > 0 ? Math.floor(stock.honey / recipe.honeyPer) : null
   const flourCap = Math.floor(stock.flour / recipe.flourPer)
   let high =
     flourCap +
+    Math.floor(stock.wheat / (recipe.flourPer * 3)) +
     recipe.ingredients.reduce((sum, item) => sum + Math.floor(stock[item.stock] / item.per), 2) +
     (unitCost > 0 ? Math.floor(gold / unitCost) + 2 : 100_000)
   if (honeyCap !== null) high = Math.min(high, honeyCap)
@@ -180,7 +186,7 @@ export function calculateCakes(
   while (low <= high) {
     const middle = (low + high) >> 1
     const purchase = purchasesFor(middle, recipe, stock, prices)
-    if (purchase.spent <= gold && middle <= flourCap && (honeyCap === null || middle <= honeyCap)) {
+    if (purchase.spent <= gold && (honeyCap === null || middle <= honeyCap)) {
       maximum = middle
       low = middle + 1
     } else {
@@ -189,7 +195,7 @@ export function calculateCakes(
   }
   const amount = target > 0 ? Math.min(target, maximum) : maximum
   const purchase = purchasesFor(amount, recipe, stock, prices)
-  const wheatNeeded = Math.max(0, (target - stock.flour) * 3)
+  const wheatNeeded = Math.max(0, (target * recipe.flourPer - stock.flour) * 3 - stock.wheat)
   return {
     maximum,
     amount,

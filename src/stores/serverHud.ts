@@ -21,6 +21,7 @@ import type {
 // ── Fila de "Mark in game" em lote ─────────────────────────────────────────────
 
 const BATCH_QUEUE_KEY = 'palworld:map:mark-queue'
+const PLAYER_POSITION_TRACKING_KEY = 'palworld:map:player-position-tracking'
 const MARK_MAX_RETRIES = 3
 const MARK_RETRY_DELAY_MS = 800
 /** Segurança contra travamento: automação que nunca chega a um status terminal */
@@ -41,6 +42,15 @@ function loadBatchQueue(): BatchQueueItem[] {
   }
 }
 
+function loadPlayerPositionTracking(): boolean {
+  try {
+    return localStorage.getItem(PLAYER_POSITION_TRACKING_KEY) !== 'false'
+  } catch (cause) {
+    console.warn('Failed to read player position tracking preference:', cause)
+    return true
+  }
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
@@ -52,6 +62,7 @@ export const useServerHudStore = defineStore('serverHud', () => {
   const gameMarker = ref<GameMarkerState | null>(null)
   const mouseLoop = ref<MouseLoopState | null>(null)
   const playerPosition = ref<PlayerPositionState | null>(null)
+  const playerPositionTracking = ref(loadPlayerPositionTracking())
   const error = ref('')
   let timer: number | undefined
   let gameMarkerTimer: number | undefined
@@ -60,7 +71,7 @@ export const useServerHudStore = defineStore('serverHud', () => {
   let pollingGameMarker = false
   let pollingMouseLoop = false
   let pollingPlayerPosition = false
-  let playerPositionPollingEnabled = false
+  let playerPositionPollingActive = false
 
   const online = computed(() => health.value?.ok === true)
   const gameMarkerBusy = computed(() => gameMarker.value?.active === true)
@@ -113,16 +124,19 @@ export const useServerHudStore = defineStore('serverHud', () => {
   }
 
   async function pollPlayerPosition(): Promise<void> {
-    if (!playerPositionPollingEnabled || pollingPlayerPosition) return
+    if (!playerPositionTracking.value || !playerPositionPollingActive || pollingPlayerPosition) return
     pollingPlayerPosition = true
     try {
-      playerPosition.value = await api.getPlayerPositionState()
+      const state = await api.getPlayerPositionState()
+      if (playerPositionTracking.value && playerPositionPollingActive) playerPosition.value = state
     } catch (cause) {
-      playerPosition.value = null
-      error.value = cause instanceof Error ? cause.message : 'Player position status failed'
+      if (playerPositionTracking.value && playerPositionPollingActive) {
+        playerPosition.value = null
+        error.value = cause instanceof Error ? cause.message : 'Player position status failed'
+      }
     } finally {
       pollingPlayerPosition = false
-      if (playerPositionPollingEnabled) {
+      if (playerPositionTracking.value && playerPositionPollingActive) {
         const delayMs =
           playerPosition.value?.status === 'ready' ? 250 : 1_500
         playerPositionTimer = window.setTimeout(() => void pollPlayerPosition(), delayMs)
@@ -131,15 +145,29 @@ export const useServerHudStore = defineStore('serverHud', () => {
   }
 
   function startPlayerPositionPolling(): void {
-    if (playerPositionPollingEnabled) return
-    playerPositionPollingEnabled = true
-    void pollPlayerPosition()
+    playerPositionPollingActive = true
+    if (playerPositionTracking.value) void pollPlayerPosition()
   }
 
   function stopPlayerPositionPolling(): void {
-    playerPositionPollingEnabled = false
+    playerPositionPollingActive = false
     window.clearTimeout(playerPositionTimer)
     playerPositionTimer = undefined
+  }
+
+  function setPlayerPositionTracking(enabled: boolean): void {
+    playerPositionTracking.value = enabled
+    try {
+      localStorage.setItem(PLAYER_POSITION_TRACKING_KEY, String(enabled))
+    } catch (cause) {
+      console.warn('Failed to save player position tracking preference:', cause)
+    }
+    if (enabled) {
+      startPlayerPositionPolling()
+    } else {
+      stopPlayerPositionPolling()
+      playerPosition.value = null
+    }
   }
 
   async function pollGameMarker(): Promise<void> {
@@ -419,6 +447,7 @@ export const useServerHudStore = defineStore('serverHud', () => {
     mouseLoop,
     mouseLoopBusy,
     playerPosition,
+    playerPositionTracking,
     error,
     batchQueue,
     batchRunning,
@@ -439,6 +468,7 @@ export const useServerHudStore = defineStore('serverHud', () => {
     pollMouseLoop,
     startPlayerPositionPolling,
     stopPlayerPositionPolling,
+    setPlayerPositionTracking,
     waitForGameMarkerDone,
     runSingleMark,
     enqueueBatch,

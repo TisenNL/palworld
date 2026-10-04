@@ -94,15 +94,17 @@ const materials = computed<MaterialCard[]>(() => {
       per: item.per,
     }
   })
-  const wheatBuy = cake.result.wheatNeeded
+  const wheatBuy = cake.result.purchases.wheat ?? 0
   cards.push({
     key: 'wheat',
     label: 'Wheat',
     tint: ingredientTint.wheat,
     icon: ingredientIcon.wheat,
-    badge: 'to mill for goal',
+    badge: 'to mill for batch',
+    priceKey: 'wheat',
     stockKey: 'wheat',
     buy: wheatBuy,
+    subtotal: cake.prices.wheat * wheatBuy,
   })
   cards.push({
     key: 'flour',

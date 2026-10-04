@@ -13,12 +13,14 @@ import {
 } from '@/types/data'
 import { progressSchema, type ProgressPayload } from '@/types/progress'
 import {
+  arenaLoopStateSchema,
   autoLoopStateSchema,
   gameMarkerStateSchema,
   healthSchema,
   mouseLoopStateSchema,
   ocrStateSchema,
   playerPositionStateSchema,
+  type ArenaLoopState,
   type AutoLoopState,
   type GameMarkerState,
   type HealthState,
@@ -154,6 +156,18 @@ export const api = {
   },
   getAutoLoopState: (): Promise<AutoLoopState> =>
     json('/autoloop/status', autoLoopStateSchema, { cache: 'no-store' }),
+  startArenaLoop: async (config: Record<string, unknown>): Promise<void> => {
+    await request('/arena/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    })
+  },
+  stopArenaLoop: async (): Promise<void> => {
+    await request('/arena/stop', { method: 'POST' })
+  },
+  getArenaLoopState: (): Promise<ArenaLoopState> =>
+    json('/arena/status', arenaLoopStateSchema, { cache: 'no-store' }),
   // Static paldb.cc tile pyramid bundled under public/map-tiles — no server/internet dependency.
   mapTileUrl: (z: number, x: number, y: number): string =>
     `/map-tiles/palpagos/z${z}/x${x}y${y}.webp`,
