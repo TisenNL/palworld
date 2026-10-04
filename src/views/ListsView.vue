@@ -7,7 +7,7 @@ import Select from 'primevue/select'
 import VirtualScroller from 'primevue/virtualscroller'
 import { useToast } from 'primevue/usetoast'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import CompactPanel from '@/components/layout/CompactPanel.vue'
 import { layerGroups } from '@/domain/layers'
@@ -15,15 +15,19 @@ import { useChecklistStore } from '@/stores/checklist'
 import { usePreferencesStore } from '@/stores/preferences'
 import { progressSchema } from '@/types/progress'
 
+// Set the desired number of columns
+const COLS_PER_ROW = 5 
+
 const checklist = useChecklistStore()
 const preferences = usePreferencesStore()
 const route = useRoute()
+const router = useRouter()
 const toast = useToast()
 const query = ref('')
+
 const fileInput = ref<HTMLInputElement | null>(null)
 const scroller = ref<InstanceType<typeof VirtualScroller> | null>(null)
 
-// Conectado diretamente à store de preferências
 const layerId = computed({
   get: () => preferences.values.listBrowseLayer ?? '',
   set: (value: string) => {
@@ -77,17 +81,30 @@ const filtered = computed(() => {
   })
 })
 
+// Chunks items into row arrays based on the defined number of columns
+const chunkedFiltered = computed(() => {
+  const chunks = []
+  const items = filtered.value
+  for (let i = 0; i < items.length; i += COLS_PER_ROW) {
+    chunks.push(items.slice(i, i + COLS_PER_ROW))
+  }
+  return chunks
+})
+
 const doneCount = computed(
   () => checklist.entries.filter((item) => checklist.isDone(item.storage, item.id)).length,
 )
+
+const visibleDoneCount = computed(
+  () => filtered.value.filter((item) => checklist.isDone(item.storage, item.id)).length,
+)
+
 const progress = computed(() =>
   checklist.entries.length ? (doneCount.value / checklist.entries.length) * 100 : 0,
 )
 
 const itemLabel = (item: (typeof filtered.value)[number]): string => {
-  const label = item.name ?? `${item.type ?? item.layerLabel}${item.n ? ` #${item.n}` : ''}`
-  const sealed = item.tag === 'Sealed Realm' ? `${label} · Sealed Realm` : label
-  return item.volume ? `${sealed} · ${item.volume} nodes` : sealed
+  return item.name ?? `${item.type ?? item.layerLabel}${item.n ? ` #${item.n}` : ''}`
 }
 
 function panelOpen(key: string, fallback = true): boolean {
@@ -104,6 +121,13 @@ function toggleSidebar(): void {
 
 function setFiltered(done: boolean): void {
   for (const item of filtered.value) checklist.setDone(item.storage, item.id, done)
+}
+
+function goToMap(item: { x: number; y: number }): void {
+  void router.push({
+    path: '/map',
+    query: { x: item.x, y: item.y },
+  })
 }
 
 function exportProgress(): void {
@@ -149,7 +173,10 @@ async function focusRouteItem(): Promise<void> {
   query.value = ''
   await nextTick()
   const index = filtered.value.findIndex((item) => item.uid === target)
-  if (index >= 0) scroller.value?.scrollToIndex(index, 'smooth')
+  if (index >= 0) {
+    const rowIndex = Math.floor(index / COLS_PER_ROW)
+    scroller.value?.scrollToIndex(rowIndex, 'smooth')
+  }
 }
 
 onMounted(() => void focusRouteItem())
@@ -279,66 +306,329 @@ watch(
     </button>
 
     <section class="content-pane list-content">
-      <header class="list-header">
-        <div>
-          <h1 class="view-title">Progress lists</h1>
-          <p class="view-subtitle">Mark visited locations and keep the map synchronized.</p>
+      <header class="dashboard-header">
+        <div class="header-main">
+          <h1 class="view-title">Progress Lists</h1>
+          <p class="view-subtitle">Manage your achievements and sync coordinates with the map.</p>
         </div>
-        <div class="progress-summary">
-          <strong>{{ Math.round(progress) }}%</strong>
-          <ProgressBar :value="progress" :show-value="false" />
+
+        <div class="stats-row">
+          <div class="stat-card">
+            <span class="stat-label">Overall Progress</span>
+            <div class="stat-value">
+              <strong>{{ Math.round(progress) }}%</strong>
+              <small>{{ doneCount }} / {{ checklist.entries.length }}</small>
+            </div>
+            <ProgressBar :value="progress" :show-value="false" class="custom-progress" />
+          </div>
+
+          <div class="stat-card compact">
+            <span class="stat-label">Current Filter</span>
+            <div class="stat-value">
+              <strong>{{ visibleDoneCount }} / {{ filtered.length }}</strong>
+              <small>Completed</small>
+            </div>
+          </div>
         </div>
       </header>
 
-      <VirtualScroller
-        ref="scroller"
-        :items="filtered"
-        :item-size="64"
-        class="list-scroller glass-card"
-      >
-        <template #item="{ item }">
-          <label class="checklist-row" :class="{ done: checklist.isDone(item.storage, item.id) }">
-            <Checkbox
-              :model-value="checklist.isDone(item.storage, item.id)"
-              binary
-              @update:model-value="checklist.setDone(item.storage, item.id, Boolean($event))"
-            />
-            <span class="row-color" :style="{ background: item.color }" />
-            <span class="row-copy">
-              <strong>{{ itemLabel(item) }}</strong>
-              <small>{{ item.layerLabel }} · {{ item.x }}, {{ item.y }}</small>
-            </span>
-          </label>
-        </template>
-      </VirtualScroller>
+      <div class="grid-scroller-wrapper glass-card">
+        <VirtualScroller
+          ref="scroller"
+          :items="chunkedFiltered"
+          :item-size="88"
+          class="list-scroller"
+        >
+          <template #item="{ item: row }">
+            <div class="card-row" :style="{ '--cols': COLS_PER_ROW }">
+              <div
+                v-for="item in row"
+                :key="item.uid"
+                class="checklist-card"
+                :class="{ done: checklist.isDone(item.storage, item.id) }"
+                @click="checklist.setDone(item.storage, item.id, !checklist.isDone(item.storage, item.id))"
+              >
+                <div class="card-left">
+                  <Checkbox
+                    :model-value="checklist.isDone(item.storage, item.id)"
+                    binary
+                    @click.stop
+                    @update:model-value="checklist.setDone(item.storage, item.id, Boolean($event))"
+                  />
+                  <span class="row-color" :style="{ background: item.color }" />
+                </div>
+
+                <div class="card-body">
+                  <div class="card-title-row">
+                    <strong class="item-title">{{ itemLabel(item) }}</strong>
+                    <span v-if="item.tag" class="tag-badge">{{ item.tag }}</span>
+                  </div>
+
+                  <div class="card-meta-row">
+                    <span class="layer-badge">{{ item.layerLabel }}</span>
+                    <small class="coords-text">
+                      <i class="pi pi-map-marker" /> {{ item.x }}, {{ item.y }}
+                    </small>
+                  </div>
+                </div>
+
+                <div class="card-actions" @click.stop>
+                  <Button
+                    icon="pi pi-compass"
+                    severity="secondary"
+                    text
+                    rounded
+                    size="small"
+                    title="View on Map"
+                    class="map-btn"
+                    @click="goToMap(item)"
+                  />
+                </div>
+              </div>
+
+              <!-- Invisible spacers to maintain grid alignment on the last row -->
+              <div
+                v-for="i in (COLS_PER_ROW - row.length)"
+                :key="'empty-' + i"
+                class="checklist-card empty-spacer"
+              />
+            </div>
+          </template>
+        </VirtualScroller>
+      </div>
     </section>
   </div>
 </template>
 
 <style scoped>
 .list-content {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 14px;
-  padding: 22px;
-}
-
-.list-header {
   display: flex;
-  align-items: end;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px;
+  height: 100%;
+}
+
+.dashboard-header {
+  display: flex;
   justify-content: space-between;
-  gap: 24px;
+  align-items: center;
+  gap: 20px;
+  background: color-mix(in srgb, var(--surface-card, #1e1e2d) 60%, transparent);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  padding: 16px 20px;
 }
 
-.view-subtitle {
-  margin-bottom: 0;
+.header-main .view-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
 }
 
-.progress-summary {
+.header-main .view-subtitle {
+  margin: 4px 0 0 0;
+  color: var(--muted, #8888aa);
+  font-size: 0.85rem;
+}
+
+.stats-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: color-mix(in srgb, var(--accent, #6c5ce7) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #6c5ce7) 25%, transparent);
+  border-radius: 8px;
+  padding: 10px 14px;
+  min-width: 200px;
+}
+
+.stat-card.compact {
+  min-width: 130px;
+}
+
+.stat-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted, #8888aa);
+  font-weight: 600;
+}
+
+.stat-value {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.stat-value strong {
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.stat-value small {
+  font-size: 0.75rem;
+  color: var(--muted, #8888aa);
+}
+
+.custom-progress {
+  height: 6px !important;
+  margin-top: 4px;
+}
+
+.grid-scroller-wrapper {
+  flex: 1;
+  min-height: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
+/* Force PrimeVue VirtualScroller and internal wrappers to take 100% width */
+.list-scroller,
+.list-scroller :deep(.p-virtualscroller-content),
+.list-scroller :deep(.p-virtualscroller-viewport) {
+  width: 100% !important;
+  box-sizing: border-box;
+}
+
+/* Dynamic CSS Grid row based on the defined column count */
+.card-row {
   display: grid;
-  grid-template-columns: 42px 150px;
+  grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
+  align-items: stretch; /* Garante que todas as colunas da linha sigam a altura do maior card */
+  gap: 10px;
+  padding: 6px 14px;
+  min-height: 82px;
+  height: auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Each card fills 100% of its Grid cell height and width */
+.checklist-card {
+  width: 100%;
+  height: 100%; /* Estica o card para ocupar toda a altura da linha da grid */
+  min-width: 0;
+  display: flex;
   align-items: center;
   gap: 8px;
+  padding: 8px 10px;
+  min-height: 72px;
+  background: color-mix(in srgb, var(--surface-card, #181824) 80%, transparent);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.07));
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.checklist-card.empty-spacer {
+  visibility: hidden;
+  border: none;
+  background: transparent;
+  pointer-events: none;
+}
+
+.checklist-card:hover {
+  border-color: color-mix(in srgb, var(--accent, #6c5ce7) 50%, transparent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  background: color-mix(in srgb, var(--surface-card, #1e1e2f) 95%, transparent);
+}
+
+.checklist-card.done {
+  opacity: 0.5;
+  background: color-mix(in srgb, var(--surface-card, #12121a) 60%, transparent);
+  border-color: transparent;
+}
+
+.card-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.card-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.card-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+
+.item-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.2;
+}
+
+.tag-badge {
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent, #6c5ce7) 20%, transparent);
+  color: var(--accent, #a29bfe);
+  white-space: nowrap;
+  align-self: flex-start;
+}
+
+.card-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.layer-badge {
+  font-size: 0.72rem;
+  color: var(--muted, #a0a0c0);
+  white-space: normal;
+  word-break: break-word;
+}
+
+.coords-text {
+  font-size: 0.72rem;
+  color: var(--muted, #7777aa);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.map-btn {
+  opacity: 0.7;
+  transition: opacity 140ms;
+}
+
+.checklist-card:hover .map-btn {
+  opacity: 1;
+  color: var(--accent, #6c5ce7) !important;
 }
 
 .filter-stack,
@@ -428,69 +718,14 @@ watch(
   gap: 6px;
 }
 
-.list-scroller {
-  min-height: 0;
-  height: 100%;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.checklist-row {
-  display: flex;
-  height: 64px;
-  align-items: center;
-  gap: 11px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  transition: background 120ms;
-}
-
-.checklist-row:hover {
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-}
-
-.checklist-row.done {
-  opacity: 0.55;
-}
-
-.row-copy {
-  display: grid;
-  min-width: 0;
-  gap: 3px;
-}
-
-.row-copy strong,
-.row-copy small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.row-copy strong {
-  font-size: 0.88rem;
-}
-
-.row-copy small {
-  color: var(--muted);
-  font-size: 0.75rem;
-}
-
-@media (max-width: 860px) {
-  .list-content {
-    padding: 12px;
+@media (max-width: 900px) {
+  .dashboard-header {
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .list-header {
-    align-items: start;
-  }
-
-  .view-subtitle {
-    display: none;
-  }
-
-  .progress-summary {
-    grid-template-columns: 34px 90px;
+  .stats-row {
+    flex-direction: column;
   }
 }
 </style>

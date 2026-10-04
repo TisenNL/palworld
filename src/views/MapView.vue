@@ -1,12 +1,13 @@
 <script setup lang="ts">
 /**
- * MapView — vista principal do mapa interativo.
- * Usa LeafletMapView (op.gg replication) + opggMap store.
- * Mantém todas as integrações com o servidor helper Python.
+ * MapView — main interactive map view.
+ * Uses LeafletMapView (op.gg replication) + opggMap store.
+ * Maintains all integrations with the Python helper server.
  */
 import { useToast } from 'primevue/usetoast'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { useRoute } from 'vue-router'
 import ArenaLoopPanel from '@/components/map/ArenaLoopPanel.vue'
 import AutoLoopPanel from '@/components/map/AutoLoopPanel.vue'
 import LeafletMapView from '@/components/map/LeafletMapView.vue'
@@ -26,6 +27,7 @@ interface LeafletExposed {
   getMap: () => unknown
 }
 
+const route = useRoute()
 const mapStore = useOpggMapStore()
 const server   = useServerHudStore()
 const toast    = useToast()
@@ -42,13 +44,28 @@ const spawnSearch = ref('')
 
 let searchTimer: number | undefined
 
-// ── Initialise ────────────────────────────────────────────────────────────
+async function focusRouteCoords(): Promise<void> {
+  const x = Number(route.query.x)
+  const y = Number(route.query.y)
+  if (route.query.x !== undefined && route.query.y !== undefined && !isNaN(x) && !isNaN(y)) {
+    await nextTick()
+    leafletRef.value?.centerIngame(x, y)
+  }
+}
+
+// ── Initialize ────────────────────────────────────────────────────────────
 onMounted(async () => {
   await mapStore.initialize()
   void server.pollGameMarker()
   void server.pollMouseLoop()
   server.startPlayerPositionPolling()
+  await focusRouteCoords()
 })
+
+watch(
+  () => route.query,
+  () => void focusRouteCoords(),
+)
 
 onBeforeUnmount(() => {
   server.stopPlayerPositionPolling()
@@ -217,7 +234,7 @@ async function markInGame() {
   }
 }
 
-// ── Mark queue (lote) ─────────────────────────────────────────────────────
+// ── Mark queue (batch) ────────────────────────────────────────────────────
 const batchActionCount = computed(() => server.pendingBatchCount + mapStore.selectionCount)
 const useQueueAction = computed(() => mapStore.selectionCount > 1 || server.pendingBatchCount > 0)
 
@@ -254,7 +271,7 @@ async function markAllInGame() {
       detail: 'Keep the Palworld map open, then try again.', life: 4000 })
     return
   }
-  // Seleção atual entra na fila (validação de zona homogênea dentro do store)
+  // Current selection enters queue (homogeneous zone validation inside store)
   if (mapStore.selectionCount > 0) {
     const drafts = mapStore.selectionMarkers.map((mk) => ({
       id: mk.id,
@@ -689,7 +706,7 @@ async function toggleMouseLoop() {
                   {{ markerDisplayName(mapStore.selectedMarker) }}
                 </template>
                 <template v-else>
-                  <em style="color:#4444660">Click a marker first</em>
+                  <em style="color:#444466">Click a marker first</em>
                 </template>
               </span>
               <button
@@ -1004,7 +1021,7 @@ async function toggleMouseLoop() {
   transition: border-color 0.15s;
 }
 .map-search-input:focus { border-color: #6c5ce7; }
-.map-search-input::placeholder { color: #4444660; }
+.map-search-input::placeholder { color: #444466; }
 
 .map-sidebar__status {
   padding: 16px;
@@ -1186,13 +1203,13 @@ async function toggleMouseLoop() {
 .filter-group__chevron {
   transition: transform 0.15s;
   flex-shrink: 0;
-  color: #5555770;
+  color: #555577;
 }
 .filter-group__chevron--open { transform: rotate(180deg); }
 
 .filter-group__count {
   margin-left: auto;
-  color: #5555770;
+  color: #555577;
   font-weight: 500;
   font-size: 9px;
 }
@@ -1281,7 +1298,7 @@ async function toggleMouseLoop() {
 }
 
 .filter-type-btn__count {
-  color: #5555770;
+  color: #555577;
   font-size: 9px;
   flex-shrink: 0;
 }
@@ -1396,7 +1413,7 @@ async function toggleMouseLoop() {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: #5555770;
+  color: #555577;
   padding-top: 4px;
 }
 
@@ -1545,7 +1562,7 @@ async function toggleMouseLoop() {
 .map-sidebar__footer-count {
   margin-left: auto;
   font-weight: 700;
-  color: #5555770;
+  color: #555577;
 }
 
 /* ── Show sidebar btn (mobile/collapsed) ────────────────────────────────── */
