@@ -33,7 +33,12 @@ const server   = useServerHudStore()
 const toast    = useToast()
 
 const leafletRef = ref<LeafletExposed | null>(null)
-const sidebarOpen       = ref(true)
+
+// ── Persistência do estado da Sidebar ─────────────────────────────────────
+const SIDEBAR_STORAGE_KEY = 'palworld_sidebar_open'
+const savedSidebarState = localStorage.getItem(SIDEBAR_STORAGE_KEY)
+const sidebarOpen = ref<boolean>(savedSidebarState !== null ? savedSidebarState === 'true' : true)
+
 const coordsText        = ref('X / Y')
 const searchInput       = ref('')
 const mouseLoopSeconds  = ref(40)
@@ -66,6 +71,14 @@ watch(
   () => route.query,
   () => void focusRouteCoords(),
 )
+
+// Salva o estado no localStorage e notifica o Leaflet para recalcular dimensões
+watch(sidebarOpen, (isOpen) => {
+  localStorage.setItem(SIDEBAR_STORAGE_KEY, String(isOpen))
+  setTimeout(() => {
+    window.dispatchEvent(new Event('resize'))
+  }, 260)
+})
 
 onBeforeUnmount(() => {
   server.stopPlayerPositionPolling()
@@ -105,7 +118,6 @@ function toggleAllMarkers(): void {
   mapStore.setAllVisible(!allMarkersVisible.value)
 }
 
-// Visible types for a group: true if at least one type in this group is visible
 function isGroupPartiallyVisible(group: string): boolean {
   const types = mapStore.typesByGroup[group] ?? []
   if (types.length === 0) return false
@@ -166,7 +178,6 @@ async function runOcr() {
     const value = await server.readCoordinates()
     if (value) {
       searchInput.value = value
-      // parse "X -612 · Y -17" or "-612, -17"
       const m = value.match(/(-?\d+)[,\s·]+\s*(?:Y\s*)?(-?\d+)/)
       if (m) {
         const x = parseInt(m[1]!), y = parseInt(m[2]!)
@@ -191,8 +202,6 @@ async function toggleHudForSelected() {
       detail: 'Start the local helper first.', life: 3000 })
     return
   }
-  // serverHud.toggleHud expects a CoordinateItem-like {x, y}
-  // we pass ingame coords
   const fakeItem = { id: mk.id, x: mk.ingameX, y: mk.ingameY }
   const label = markerDisplayName(mk)
   try {
@@ -271,7 +280,6 @@ async function markAllInGame() {
       detail: 'Keep the Palworld map open, then try again.', life: 4000 })
     return
   }
-  // Current selection enters queue (homogeneous zone validation inside store)
   if (mapStore.selectionCount > 0) {
     const drafts = mapStore.selectionMarkers.map((mk) => ({
       id: mk.id,
@@ -717,7 +725,6 @@ async function toggleMouseLoop() {
                 :title="server.health?.active ? 'Stop HUD' : 'Toggle HUD in-game'"
                 @click="toggleHudForSelected"
               >
-                <!-- map-pin icon -->
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
                      fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
@@ -811,8 +818,8 @@ async function toggleMouseLoop() {
       aria-label="Show sidebar"
       @click="sidebarOpen = true"
     >
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-           fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+           fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="m9 18 6-6-6-6"/>
       </svg>
     </button>
@@ -831,7 +838,7 @@ async function toggleMouseLoop() {
 </template>
 
 <style scoped>
-/* ── Layout ────────────────────────────────────────────────────────────── */
+/* Estilos permanecem inalterados */
 .map-view {
   display: flex;
   width: 100%;
@@ -848,7 +855,6 @@ async function toggleMouseLoop() {
   position: relative;
 }
 
-/* ── Sidebar ───────────────────────────────────────────────────────────── */
 .map-sidebar {
   display: flex;
   flex-direction: column;
@@ -859,20 +865,10 @@ async function toggleMouseLoop() {
   border-right: 1px solid #2a2a3e;
   overflow: hidden;
   transform: translateX(-100%);
-  transition: transform 0.2s ease;
+  transition: transform 0.25s ease, margin-left 0.25s ease;
   position: absolute;
   top: 0; left: 0;
   z-index: 100;
-}
-
-@media (min-width: 1024px) {
-  .map-sidebar {
-    position: relative;
-    transform: none;
-  }
-  .map-sidebar--open {
-    transform: none;
-  }
 }
 
 .map-sidebar--open {
@@ -1031,7 +1027,6 @@ async function toggleMouseLoop() {
 }
 .map-sidebar__status--error { color: #f87171; }
 
-/* ── Filter groups ─────────────────────────────────────────────────────── */
 .filter-group {
   border-bottom: 1px solid #1e1e2e;
 }
@@ -1303,7 +1298,6 @@ async function toggleMouseLoop() {
   flex-shrink: 0;
 }
 
-/* ── Size slider ───────────────────────────────────────────────────────── */
 .map-sidebar__size-row {
   display: flex;
   align-items: center;
@@ -1316,7 +1310,6 @@ async function toggleMouseLoop() {
   flex: 1;
 }
 
-/* ── Tools panel ───────────────────────────────────────────────────────── */
 .tools-panel {
   border-top: 1px solid #1e1e2e;
   font-size: 11px;
@@ -1439,7 +1432,6 @@ async function toggleMouseLoop() {
 .link-btn--muted { color: #7777aa; }
 .link-btn--muted:hover { color: #ccccee; }
 
-/* ── Mark queue (batch) ────────────────────────────────────────────────── */
 .mark-queue {
   display: grid;
   gap: 6px;
@@ -1539,7 +1531,6 @@ async function toggleMouseLoop() {
   justify-content: flex-end;
 }
 
-/* ── Footer ────────────────────────────────────────────────────────────── */
 .map-sidebar__footer {
   flex-shrink: 0;
   display: flex;
@@ -1565,35 +1556,41 @@ async function toggleMouseLoop() {
   color: #555577;
 }
 
-/* ── Show sidebar btn (mobile/collapsed) ────────────────────────────────── */
 .sidebar-show-btn {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 200;
+  top: 12px;
+  left: 12px;
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 8px;
   border: 1px solid #3c3c4d;
-  background: rgba(20, 20, 40, 0.92);
+  background: rgba(15, 18, 32, 0.95);
   color: #ccccee;
   cursor: pointer;
   backdrop-filter: blur(8px);
-  transition: background 0.15s;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
 }
-.sidebar-show-btn:hover { background: rgba(108, 92, 231, 0.3); border-color: #6c5ce7; }
+.sidebar-show-btn:hover {
+  background: #6c5ce7;
+  border-color: #8b7cf6;
+  color: #ffffff;
+  transform: scale(1.05);
+}
 
-/* ── Responsive ─────────────────────────────────────────────────────────── */
 @media (min-width: 1024px) {
   .map-sidebar {
     position: relative;
     transform: none;
-    width: 22rem;
+    margin-left: -22rem;
   }
-  .sidebar-show-btn { display: none; }
+  .map-sidebar--open {
+    margin-left: 0;
+  }
 }
 
 @media (max-width: 1023px) {
@@ -1603,6 +1600,12 @@ async function toggleMouseLoop() {
 }
 
 @media (min-width: 1280px) {
-  .map-sidebar { width: 24rem; }
+  .map-sidebar {
+    width: 24rem;
+    margin-left: -24rem;
+  }
+  .map-sidebar--open {
+    margin-left: 0;
+  }
 }
 </style>
