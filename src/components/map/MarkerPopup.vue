@@ -7,12 +7,15 @@ import { getMarkerIconUrl, getMarkerColor } from '@/domain/opggMarkerIcons'
 
 const props = defineProps<{
   marker: Marker
-  checked: boolean
+  checked: boolean       // Discovered / Found status
+  batchSelected?: boolean // Selected for batch in-game marking
 }>()
 
 const emit = defineEmits<{
   close: []
   toggleChecked: []
+  toggleBatch: []
+  markIngame: []
 }>()
 
 const title = computed(() => markerDisplayName(props.marker))
@@ -58,38 +61,70 @@ const level   = computed(() => {
     <!-- Coordinates -->
     <div class="marker-popup__coords">{{ coords }}</div>
 
-    <!-- Discovered toggle -->
-    <button
-      class="marker-popup__toggle"
-      :class="{ 'marker-popup__toggle--checked': checked }"
-      type="button"
-      @click="emit('toggleChecked')"
-    >
-      <span class="marker-popup__toggle-icon" aria-hidden="true">
-        <template v-if="checked">
-          <!-- Eye icon (discovered) -->
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-            <circle cx="12" cy="12" r="3"/>
-          </svg>
-        </template>
-        <template v-else>
-          <!-- EyeOff icon (not discovered) -->
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/>
-            <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/>
-            <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/>
-            <path d="m2 2 20 20"/>
-          </svg>
-        </template>
-      </span>
-      <span>{{ checked ? 'Discovered' : 'Not discovered' }}</span>
-      <span class="marker-popup__toggle-action" aria-hidden="true">
-        {{ checked ? 'Mark as not found' : 'Mark as found' }}
-      </span>
-    </button>
+    <!-- Actions Section -->
+    <div class="marker-popup__actions">
+      <!-- Direct Mark in Game button -->
+      <button
+        class="marker-popup__btn marker-popup__btn--primary"
+        type="button"
+        title="Mark this position directly in game now"
+        @click="emit('markIngame')"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="16"/>
+          <line x1="8" y1="12" x2="16" y2="12"/>
+        </svg>
+        <span>Mark in Game</span>
+      </button>
+
+      <!-- Toggle Batch Selection button -->
+      <button
+        class="marker-popup__btn"
+        :class="{ 'marker-popup__btn--active': batchSelected }"
+        type="button"
+        title="Add/Remove from batch marking queue"
+        @click="emit('toggleBatch')"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 11 12 14 22 4"/>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+        <span>{{ batchSelected ? 'In Batch Queue' : 'Add to Batch' }}</span>
+      </button>
+
+      <!-- Discovered / Found toggle -->
+      <button
+        class="marker-popup__toggle"
+        :class="{ 'marker-popup__toggle--checked': checked }"
+        type="button"
+        @click="emit('toggleChecked')"
+      >
+        <span class="marker-popup__toggle-icon" aria-hidden="true">
+          <template v-if="checked">
+            <!-- Eye icon (discovered) -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </template>
+          <template v-else>
+            <!-- EyeOff icon (not discovered) -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/>
+              <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/>
+              <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/>
+              <path d="m2 2 20 20"/>
+            </svg>
+          </template>
+        </span>
+        <span>{{ checked ? 'Discovered' : 'Not Discovered' }}</span>
+      </button>
+    </div>
   </div>
 </template>
 
@@ -177,11 +212,57 @@ const level   = computed(() => {
 }
 
 .marker-popup__coords {
-  padding: 4px 12px 10px;
+  padding: 0 12px 10px;
   font-size: 11px;
   font-weight: 600;
   color: #8888bb;
   letter-spacing: 0.02em;
+}
+
+.marker-popup__actions {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid #2a2a3e;
+}
+
+.marker-popup__btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: #a0a0c0;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  text-align: left;
+}
+
+.marker-popup__btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+}
+
+.marker-popup__btn--primary {
+  color: #61afef;
+}
+
+.marker-popup__btn--primary:hover {
+  background: rgba(97, 175, 239, 0.15);
+  color: #8cc2ff;
+}
+
+.marker-popup__btn--active {
+  color: #a78bfa;
+  background: rgba(108, 92, 231, 0.15);
+}
+
+.marker-popup__btn--active:hover {
+  background: rgba(108, 92, 231, 0.25);
 }
 
 .marker-popup__toggle {
@@ -189,54 +270,34 @@ const level   = computed(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.04);
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.02);
   border: none;
-  border-top: 1px solid #2a2a3e;
-  color: #ccccee;
-  font-size: 12px;
-  font-weight: 700;
+  color: #8888aa;
+  font-size: 11px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s;
   text-align: left;
 }
 
 .marker-popup__toggle:hover {
-  background: rgba(108, 92, 231, 0.18);
+  background: rgba(108, 92, 231, 0.12);
+  color: #ccccff;
 }
 
 .marker-popup__toggle--checked {
-  color: #a78bfa;
-  background: rgba(108, 92, 231, 0.12);
-}
-
-.marker-popup__toggle--checked:hover {
-  background: rgba(108, 92, 231, 0.22);
+  color: #98c379;
 }
 
 .marker-popup__toggle-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
-}
-
-.marker-popup__toggle--checked .marker-popup__toggle-icon {
-  background: rgba(108, 92, 231, 0.3);
-}
-
-.marker-popup__toggle-action {
-  margin-left: auto;
-  font-size: 10px;
-  color: #555577;
-  font-weight: 600;
-}
-
-.marker-popup__toggle:hover .marker-popup__toggle-action {
-  color: #8888aa;
 }
 </style>

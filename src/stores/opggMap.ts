@@ -569,7 +569,11 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     selectedMarker.value = marker
   }
 
-  // ── Seleção múltipla (fila de mark in game) ───────────────────────────────
+  // ── Marcação em jogo / Seleção em lote ────────────────────────────────────
+
+  function markIngame(marker: Marker): void {
+    toggleBatchSelection(marker)
+  }
 
   /** Ctrl/Cmd + Click: adiciona/remove o marker da seleção do lote */
   function toggleBatchSelection(marker: Marker): boolean {
@@ -616,10 +620,6 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     return Math.round(isLarge ? base * 1.3 : base)
   }
 
-  // ── Watch for zone changes to auto-load ───────────────────────────────────
-
-  // (Manual via setZone — no auto-watcher to keep load explicit)
-
   return {
     // State
     activeZone,
@@ -659,6 +659,7 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     isChecked,
     checkedCountForType,
     selectMarker,
+    markIngame,
     toggleBatchSelection,
     clearBatchSelection,
     updateCamera,
@@ -674,7 +675,7 @@ export const useOpggMapStore = defineStore('opggMap', () => {
     totalChecked,
     spawnPoints,
 
-    // Helpers (re-exported for convenience in templates)
+    // Helpers
     markerDisplayName,
     markerTypeLabel,
     formatIngameCoords,

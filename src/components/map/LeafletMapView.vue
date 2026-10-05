@@ -226,8 +226,7 @@ function buildLeafletMarker(marker: Marker): L.Marker {
       mapStore.toggleBatchSelection(marker)
       return
     }
-    // Click simples: comportamento de sempre (popup) + limpa a multi-seleção
-    mapStore.clearBatchSelection()
+    // Click simples: abre popup sem limpar a seleção prévia em lote
     mapStore.selectMarker(marker)
     popupVisible.value = true
     if (mapContainer.value) {
@@ -247,7 +246,6 @@ function rebuildIndex(markers: Marker[]) {
 }
 
 // ── syncMarkers — diff-based update (no full rebuild) ────────────────────
-/** Invalida cargas em andamento — troca de zona/filtro mais rápida que um chunk. */
 let syncToken = 0
 
 function removeStaleMarkers(currentIds: Set<string>): void {
@@ -272,21 +270,11 @@ function addMarkerToMap(marker: Marker): void {
   lg.addLayer(lm)
 }
 
-/** Rende ao navegador entre chunks (idle, com fallback para `setTimeout`). */
 function scheduleChunk(run: () => void): void {
   if (typeof requestIdleCallback !== 'undefined') requestIdleCallback(run, { timeout: 500 })
   else setTimeout(run, 0)
 }
 
-/**
- * Sincroniza o mapa com `filteredMarkers`.
- *
- * Lotes pequenos renderizam de uma vez; carga inicial e troca de zona (milhares
- * de marcadores) renderizam em chunks para não congelar a main thread. Cada
- * nova sincronização incrementa `syncToken` e descarta os chunks da anterior —
- * sem isso, chunks velhos re-injetariam marcadores de uma zona ou filtro que
- * já não está ativo.
- */
 function syncMarkers(): void {
   const token = ++syncToken
   const current = mapStore.filteredMarkers
@@ -341,7 +329,6 @@ function cancelPlayerGlide(): void {
   playerTarget = null
 }
 
-// Desliza o marcador/mapa até a última posição lida; o loop para sozinho ao chegar (custo zero parado).
 function playerGlideStep(now: number): void {
   playerGlideRaf = 0
   if (!mapInstance || !playerPositionMarker || !playerTarget) return
@@ -395,13 +382,11 @@ function syncPlayerPosition(): void {
   mapInstance.panTo([lat, lng], { animate: false })
 }
 
-// ── Fix 2 — chunked initial load to avoid blocking the main thread ────────
 const CHUNK_SIZE = 300
 
-// ── Fix 1 — refreshMarkerIcons uses O(1) index ───────────────────────────
 function refreshMarkerIcons() {
   for (const [id, lm] of leafletMarkers) {
-    const marker = filteredMarkersById.get(id)   // O(1) — was O(n) find()
+    const marker = filteredMarkersById.get(id)
     if (!marker) continue
     lm.setIcon(makeIcon(marker, mapStore.isChecked(marker), mapStore.selectedMarkerIds.has(id)))
   }
@@ -465,7 +450,6 @@ function initMap() {
     }
     popupVisible.value = false
     mapStore.selectMarker(null)
-    mapStore.clearBatchSelection()
   })
 
   mapInstance.on('moveend zoomend', () => {
@@ -478,17 +462,15 @@ function initMap() {
   updateZoomPercent(zoom)
   syncSpawnLocations()
   syncPlayerPosition()
-  // Fix 2 — use chunked loader on initial mount to avoid blocking the UI
   void nextTick(syncMarkers)
   emit('mapReady')
 }
 
-// ── Watch: filter changes — diff sync (fast for small deltas) ────────────
+// ── Watchers ──────────────────────────────────────────────────────────────
 watch(() => mapStore.filteredMarkers, () => { syncMarkers() }, { deep: false })
 watch(() => mapStore.spawnPoints, syncSpawnLocations, { deep: false })
 watch([() => props.mapZone, () => props.playerPosition], syncPlayerPosition)
 
-// ── Fix 5 — debounce markerSize watch so slider drags don't thrash ────────
 let sizeDebounceTimer: ReturnType<typeof setTimeout> | undefined
 watch(() => mapStore.markerSize, () => {
   clearTimeout(sizeDebounceTimer)
@@ -498,15 +480,13 @@ watch(() => mapStore.markerSize, () => {
   }, 80)
 })
 
-// ── Fix 1 — checked watch: only update markers whose state actually changed
 watch(() => mapStore.totalChecked, () => {
   for (const [id, lm] of leafletMarkers) {
-    const marker = filteredMarkersById.get(id)  // O(1)
+    const marker = filteredMarkersById.get(id)
     if (!marker) continue
 
     const isNowChecked = mapStore.isChecked(marker)
     const isNowSelected = mapStore.selectedMarkerIds.has(id)
-    // DOM check — avoids setIcon when nothing changed
     const el = lm.getElement()
     const wasChecked = el
       ? el.querySelector('.palworld-map-marker-checked') !== null
@@ -520,17 +500,15 @@ watch(() => mapStore.totalChecked, () => {
   }
 })
 
-// ── Seleção de lote: atualiza apenas os ícones cujo estado mudou ──────────
 function refreshSelectionIcons() {
   for (const [id, lm] of leafletMarkers) {
     const el = lm.getElement()
     const isSelected = mapStore.selectedMarkerIds.has(id)
-    // DOM check — avoids setIcon when nothing changed
     const wasSelected = el
       ? el.querySelector('.palworld-map-marker-selected') !== null
       : false
     if (isSelected === wasSelected) continue
-    const marker = filteredMarkersById.get(id)  // O(1)
+    const marker = filteredMarkersById.get(id)
     if (!marker) continue
     lm.setIcon(makeIcon(marker, mapStore.isChecked(marker), isSelected))
   }
@@ -541,7 +519,6 @@ watch(
   () => { refreshSelectionIcons() },
 )
 
-// ── Swap tile layer on zone change ────────────────────────────────────────
 watch(() => props.mapZone, async (newZone) => {
   if (!mapInstance) return
   if (tileLayer) { mapInstance.removeLayer(tileLayer); tileLayer = null }
@@ -552,12 +529,10 @@ watch(() => props.mapZone, async (newZone) => {
     bounds: [[-(WORLD_SIZE), 0], [0, WORLD_SIZE]],
   }).addTo(mapInstance)
 
-  // Clear all markers and the O(1) index
   for (const lg of layerGroups.values()) lg.clearLayers()
   layerGroups.clear()
   leafletMarkers.clear()
   filteredMarkersById.clear()
-  // Fix 6 — HTML cache is size-dependent; clear it on zone swap
   clearMarkerHtmlCache()
 
   popupVisible.value = false
@@ -574,9 +549,31 @@ watch(() => props.mapZone, async (newZone) => {
   syncPlayerPosition()
 
   await nextTick()
-  // Fix 2 — chunked load also on zone switch (new zone may have many markers)
   syncMarkers()
 })
+
+// ── Event Handlers do Popup ───────────────────────────────────────────────
+function handleClosePopup() {
+  popupVisible.value = false
+  mapStore.selectMarker(null)
+}
+
+function handleToggleChecked() {
+  if (mapStore.selectedMarker) {
+    mapStore.toggleChecked(mapStore.selectedMarker)
+  }
+}
+
+function handleToggleBatch() {
+  if (mapStore.selectedMarker) {
+    mapStore.toggleBatchSelection(mapStore.selectedMarker)
+  }
+}
+
+function handleMarkIngame() {
+  if (!mapStore.selectedMarker) return
+  mapStore.markIngame(mapStore.selectedMarker)
+}
 
 // ── Exposed API ───────────────────────────────────────────────────────────
 function zoomIn()  { mapInstance?.zoomIn(1) }
@@ -619,7 +616,7 @@ defineExpose({ zoomIn, zoomOut, flyTo, centerIngame, getMap })
 onMounted(initMap)
 
 onBeforeUnmount(() => {
-  syncToken++ // aborta chunks pendentes
+  syncToken++
   cancelPlayerGlide()
   cancelSmoothZoom()
   clearTimeout(sizeDebounceTimer)
@@ -700,8 +697,11 @@ onBeforeUnmount(() => {
         <MarkerPopup
           :marker="mapStore.selectedMarker"
           :checked="mapStore.isChecked(mapStore.selectedMarker)"
-          @close="() => { popupVisible = false; mapStore.selectMarker(null) }"
-          @toggle-checked="() => { if (mapStore.selectedMarker) mapStore.toggleChecked(mapStore.selectedMarker) }"
+          :batch-selected="mapStore.selectedMarkerIds.has(mapStore.selectedMarker.id)"
+          @close="handleClosePopup"
+          @toggle-checked="handleToggleChecked"
+          @toggle-batch="handleToggleBatch"
+          @mark-ingame="handleMarkIngame"
         />
       </div>
     </Teleport>
@@ -731,8 +731,7 @@ onBeforeUnmount(() => {
   pointer-events: auto;
 }
 
-/* Global: anel de seleção para a fila de mark in game (Ctrl/Cmd + Click).
-   Usa ::after no wrapper para não brigar com o box-shadow inline do ícone. */
+/* Global: anel de seleção para a fila de mark in game */
 .palworld-map-marker-selected::after {
   content: '';
   position: absolute;
