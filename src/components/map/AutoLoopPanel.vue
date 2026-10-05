@@ -8,23 +8,23 @@ const loop = useAutoLoopStore()
 const COORD_LABELS: Record<string, string> = {
   RETURN_TO_TITLE: 'Return to Title',
   YES: 'Yes',
-  START_GAME: 'Start Game (1º)',
+  START_GAME: 'Start Game (1st)',
   PALPAGOS_ISLANDS: 'Palpagos Islands',
-  START_GAME_2: 'Start Game (2º, final)',
+  START_GAME_2: 'Start Game (2nd, final)',
 }
 
-// Na ordem em que acontecem na sequência
+// In the order they occur in the sequence
 const WAIT_FIELDS = [
-  { key: 'afterThrow', label: 'Lançar→ataque', title: 'Espera após lançar o Pal, antes do ataque (s)' },
-  { key: 'wait1', label: 'Espera 1', title: 'Espera 1 após o ataque, antes do Esc (s)' },
-  { key: 'afterHud', label: 'Pós-HUD', title: 'Espera após reconhecer o HUD, antes da tecla E (s)' },
+  { key: 'afterThrow', label: 'Throw→attack', title: 'Wait after throwing Pal, before attack (s)' },
+  { key: 'wait1', label: 'Wait 1', title: 'Wait 1 after attack, before Esc (s)' },
+  { key: 'afterHud', label: 'Post-HUD', title: 'Wait after HUD recognition, before key E (s)' },
 ] as const
 
 const statusText = computed(() => {
-  if (loop.paused) return 'Pausado'
-  if (loop.running) return 'Rodando'
-  if (loop.calibrating) return 'Calibrando'
-  return 'Parado'
+  if (loop.paused) return 'Paused'
+  if (loop.running) return 'Running'
+  if (loop.calibrating) return 'Calibrating'
+  return 'Stopped'
 })
 
 const stepText = computed(() => {
@@ -66,23 +66,23 @@ onBeforeUnmount(() => loop.stopPolling())
         :disabled="loop.calibrating"
         @click="void loop.toggle()"
       >
-        {{ loop.running ? 'Parar Auto Loop (F10)' : 'Iniciar Auto Loop' }}
+        {{ loop.running ? 'Stop Auto Loop (F10)' : 'Start Auto Loop' }}
       </button>
     </div>
     <div class="autoloop__info">
-      <div>Passo: {{ stepText }}</div>
-      <div>Iterações: {{ loop.state?.iterations ?? 0 }}</div>
+      <div>Step: {{ stepText }}</div>
+      <div>Iterations: {{ loop.state?.iterations ?? 0 }}</div>
       <div v-if="loop.paused" class="autoloop__warn">{{ loop.state?.message }}</div>
       <div v-else-if="loop.state?.message">{{ loop.state.message }}</div>
     </div>
     <details class="autoloop__calibrate">
-      <summary>Posições (aprendidas pelo OCR na 1ª execução)</summary>
+      <summary>Positions (learned via OCR on 1st run)</summary>
       <div v-for="(label, key) in COORD_LABELS" :key="key" class="coords-display">
         {{ label }}:
         <template v-if="loop.state?.coords[key]">
           {{ loop.state.coords[key]![0] }}, {{ loop.state.coords[key]![1] }}
         </template>
-        <em v-else>ainda não aprendido</em>
+        <em v-else>not learned yet</em>
       </div>
       <div class="tools-row">
         <button
@@ -90,10 +90,10 @@ onBeforeUnmount(() => loop.stopPolling())
           style="width: 100%"
           type="button"
           :disabled="loop.running || loop.calibrating"
-          title="Esquece as posições; na próxima execução o OCR localiza os botões de novo"
+          title="Forget positions; on the next run OCR will locate buttons again"
           @click="void loop.resetPositions()"
         >
-          Calibrar por OCR de novo
+          Recalibrate via OCR
         </button>
       </div>
     </details>

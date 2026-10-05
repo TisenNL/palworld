@@ -6,8 +6,8 @@ import { ARENA_RANKS, ARENA_WAIT_FIELDS, useArenaLoopStore } from '@/stores/aren
 const arena = useArenaLoopStore()
 
 const statusText = computed(() => {
-  if (arena.paused) return 'Pausado'
-  return arena.running ? 'Rodando' : 'Parado'
+  if (arena.paused) return 'Paused'
+  return arena.running ? 'Running' : 'Stopped'
 })
 
 const stepText = computed(() => {
@@ -26,7 +26,7 @@ onBeforeUnmount(() => arena.stopPolling())
   <div class="arena">
     <div class="tools-section-label">Arena Loop · {{ statusText }}</div>
     <div class="arena__group">
-      <span class="arena__label">Ranks (alterna a cada luta)</span>
+      <span class="arena__label">Ranks (rotates each fight)</span>
       <label v-for="rank in ARENA_RANKS" :key="rank" class="arena__check">
         <input
           type="checkbox"
@@ -38,7 +38,7 @@ onBeforeUnmount(() => arena.stopPolling())
       </label>
     </div>
     <div class="arena__group">
-      <span class="arena__label">Pals (marque 3 das 5 posições)</span>
+      <span class="arena__label">Pals (select 3 out of 5 positions)</span>
       <label v-for="n in 5" :key="n" class="arena__check">
         <input
           type="checkbox"
@@ -75,12 +75,12 @@ onBeforeUnmount(() => arena.stopPolling())
         :disabled="!arena.running && (!palsOk || arena.config.ranks.length === 0)"
         @click="void arena.toggle()"
       >
-        {{ arena.running ? 'Parar Arena Loop (F10)' : 'Iniciar Arena Loop' }}
+        {{ arena.running ? 'Stop Arena Loop (F10)' : 'Start Arena Loop' }}
       </button>
     </div>
     <div class="arena__info">
-      <div>Passo: {{ stepText }}</div>
-      <div>Lutas: {{ arena.state?.iterations ?? 0 }}</div>
+      <div>Step: {{ stepText }}</div>
+      <div>Fights: {{ arena.state?.iterations ?? 0 }}</div>
       <div v-if="arena.state?.message">{{ arena.state.message }}</div>
     </div>
   </div>
