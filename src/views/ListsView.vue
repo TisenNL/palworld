@@ -401,12 +401,41 @@ watch(
 </template>
 
 <style scoped>
+.workspace {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.sidebar {
+  width: var(--sidebar-width, 320px);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar[aria-hidden="true"] {
+  display: none !important;
+  width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
 .list-content {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  width: 100% !important;
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 22px;
   height: 100%;
+  overflow-y: auto;
 }
 
 .dashboard-header {
