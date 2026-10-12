@@ -1,0 +1,312 @@
+{
+  "_meta": {
+    "source": "https://paldb.cc/en/",
+    "generatedAt": "2026-10-08T09:53:42.655Z",
+    "roots": [
+      "ai-core"
+    ]
+  },
+  "ai-core": {
+    "name": "AI Core",
+    "ingredients": [
+      {
+        "item": "Computer",
+        "key": "computer",
+        "qty": 5
+      },
+      {
+        "item": "Soralite Ingot",
+        "key": "soralite-ingot",
+        "qty": 10
+      },
+      {
+        "item": "Thermal Core",
+        "key": "thermal-core",
+        "qty": 2
+      },
+      {
+        "item": "Ancient Civilization Core",
+        "key": "ancient-civilization-core",
+        "qty": 1
+      }
+    ],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_AIcore.webp",
+    "note": "2 workbenches (Advanced Workshop, Ancient Workbench); using the first Production recipe."
+  },
+  "computer": {
+    "name": "Computer",
+    "ingredients": [
+      {
+        "item": "Circuit Board",
+        "key": "circuit-board",
+        "qty": 2
+      },
+      {
+        "item": "Plasteel",
+        "key": "plasteel",
+        "qty": 3
+      },
+      {
+        "item": "Bio Battery",
+        "key": "bio-battery",
+        "qty": 2
+      },
+      {
+        "item": "Carbon Fiber",
+        "key": "carbon-fiber",
+        "qty": 2
+      }
+    ],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_Computer.webp",
+    "note": "3 workbenches (Production Assembly Line II, Advanced Workshop, Ancient Workbench); using the first Production recipe."
+  },
+  "soralite-ingot": {
+    "name": "Soralite Ingot",
+    "ingredients": [
+      {
+        "item": "Soralite",
+        "key": "soralite",
+        "qty": 2
+      },
+      {
+        "item": "Pure Quartz",
+        "key": "pure-quartz",
+        "qty": 2
+      }
+    ],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_SkyislandIngot.webp"
+  },
+  "thermal-core": {
+    "name": "Thermal Core",
+    "ingredients": [
+      {
+        "item": "Flame Organ",
+        "key": "flame-organ",
+        "qty": 4
+      },
+      {
+        "item": "Coal",
+        "key": "coal",
+        "qty": 8
+      },
+      {
+        "item": "Corrosive Solvent",
+        "key": "corrosive-solvent",
+        "qty": 2
+      },
+      {
+        "item": "Hexolite",
+        "key": "hexolite",
+        "qty": 2
+      }
+    ],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_Thermal_Core.webp",
+    "note": "3 workbenches (Production Assembly Line II, Advanced Workshop, Ancient Workbench); using the first Production recipe."
+  },
+  "ancient-civilization-core": {
+    "name": "Ancient Civilization Core",
+    "ingredients": [],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_AncientParts2.webp"
+  },
+  "circuit-board": {
+    "name": "Circuit Board",
+    "ingredients": [
+      {
+        "item": "Pure Quartz",
+        "key": "pure-quartz",
+        "qty": 2
+      },
+      {
+        "item": "Polymer",
+        "key": "polymer",
+        "qty": 1
+      }
+    ],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_ElectronicCircuit.webp",
+    "note": "4 workbenches (Production Assembly Line, Production Assembly Line II, Advanced Workshop, Ancient Workbench); using the first Production recipe."
+  },
+  "plasteel": {
+    "name": "Plasteel",
+    "ingredients": [
+      {
+        "item": "Crude Oil",
+        "key": "crude-oil",
+        "qty": 2
+      },
+      {
+        "item": "Ore",
+        "key": "ore",
+        "qty": 5
+      }
+    ],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_Plastic.webp",
+    "note": "3 workbenches (Electric Furnace, Gigantic Furnace, Ancient Furnace); using the first Production recipe."
+  },
+  "bio-battery": {
+    "name": "Bio Battery",
+    "ingredients": [
+      {
+        "item": "Electric Organ",
+        "key": "electric-organ",
+        "qty": 1
+      },
+      {
+        "item": "Refined Ingot",
+        "key": "refined-ingot",
+        "qty": 1
+      },
+      {
+        "item": "Carbon Fiber",
+        "key": "carbon-fiber",
+        "qty": 1
+      }
+    ],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_Bio_Battery.webp",
+    "note": "3 workbenches (Production Assembly Line II, Advanced Workshop, Ancient Workbench); using the first Production recipe."
+  },
+  "carbon-fiber": {
+    "name": "Carbon Fiber",
+    "ingredients": [
+      {
+        "item": "Coal",
+        "key": "coal",
+        "qty": 2
+      },
+      {
+        "item": "Flame Organ",
+        "key": "flame-organ",
+        "qty": 1
+      }
+    ],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_CarbonFiber.webp",
+    "note": "4 workbenches (Production Assembly Line, Production Assembly Line II, Advanced Workshop, Ancient Workbench); using the first Production recipe. 2 recipes in Production; using the first one."
+  },
+  "soralite": {
+    "name": "Soralite",
+    "ingredients": [],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_SkyIslandOre.webp"
+  },
+  "pure-quartz": {
+    "name": "Pure Quartz",
+    "ingredients": [],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_Quartz.webp"
+  },
+  "flame-organ": {
+    "name": "Flame Organ",
+    "ingredients": [],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_FireOrgan.webp"
+  },
+  "coal": {
+    "name": "Coal",
+    "ingredients": [],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_Coal.webp"
+  },
+  "corrosive-solvent": {
+    "name": "Corrosive Solvent",
+    "ingredients": [
+      {
+        "item": "Venom Gland",
+        "key": "venom-gland",
+        "qty": 1
+      },
+      {
+        "item": "Sulfur",
+        "key": "sulfur",
+        "qty": 1
+      }
+    ],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_Corrosive_Solvent.webp",
+    "note": "4 workbenches (Production Assembly Line, Production Assembly Line II, Advanced Workshop, Ancient Workbench); using the first Production recipe."
+  },
+  "hexolite": {
+    "name": "Hexolite",
+    "ingredients": [
+      {
+        "item": "Chromite",
+        "key": "chromite",
+        "qty": 1
+      },
+      {
+        "item": "Hexolite Quartz",
+        "key": "hexolite-quartz",
+        "qty": 1
+      }
+    ],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_StainlessSteel.webp",
+    "note": "2 workbenches (Gigantic Furnace, Ancient Furnace); using the first Production recipe."
+  },
+  "polymer": {
+    "name": "Polymer",
+    "ingredients": [
+      {
+        "item": "High Quality Pal Oil",
+        "key": "high-quality-pal-oil",
+        "qty": 2
+      },
+      {
+        "item": "Sulfur",
+        "key": "sulfur",
+        "qty": 1
+      }
+    ],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_Polymer.webp",
+    "note": "4 workbenches (Production Assembly Line, Production Assembly Line II, Advanced Workshop, Ancient Workbench); using the first Production recipe."
+  },
+  "crude-oil": {
+    "name": "Crude Oil",
+    "ingredients": [],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_CrudeOil.webp"
+  },
+  "ore": {
+    "name": "Ore",
+    "ingredients": [],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_CopperOre.webp"
+  },
+  "electric-organ": {
+    "name": "Electric Organ",
+    "ingredients": [],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_ElectricOrgan.webp"
+  },
+  "refined-ingot": {
+    "name": "Refined Ingot",
+    "ingredients": [
+      {
+        "item": "Ore",
+        "key": "ore",
+        "qty": 2
+      },
+      {
+        "item": "Coal",
+        "key": "coal",
+        "qty": 2
+      }
+    ],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_IronIngot.webp",
+    "note": "4 workbenches (Improved Furnace, Electric Furnace, Gigantic Furnace, Ancient Furnace); using the first Production recipe."
+  },
+  "venom-gland": {
+    "name": "Venom Gland",
+    "ingredients": [],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_Venom.webp"
+  },
+  "sulfur": {
+    "name": "Sulfur",
+    "ingredients": [],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_Sulfur.webp"
+  },
+  "chromite": {
+    "name": "Chromite",
+    "ingredients": [],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_Chromium.webp"
+  },
+  "hexolite-quartz": {
+    "name": "Hexolite Quartz",
+    "ingredients": [],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_RainbowCrystal.webp"
+  },
+  "high-quality-pal-oil": {
+    "name": "High Quality Pal Oil",
+    "ingredients": [],
+    "icon": "https://cdn.paldb.cc/image/Others/InventoryItemIcon/Texture/T_itemicon_Material_PalOil.webp"
+  }
+}

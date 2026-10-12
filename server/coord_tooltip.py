@@ -30,6 +30,7 @@ from .game_marker_automation import GameMarkerController, MouseComboLoop, Window
 from .marker_timing import (
     MARKER_TIMING,
     _current_timing_collector,
+    _env_flag,
     current_ocr_context,
     record_ocr_meta,
 )
@@ -1120,8 +1121,69 @@ def fetch_wt_tile_bytes(z: int, tx: int, ty: int) -> bytes:
     return data
 
 
+# Rotas que o frontend consulta a cada poucos milissegundos (polling) e os
+# arquivos estáticos que ele puxa em rajada: imprimir o 2xx dessas requisições
+# só polui o console. Erros continuam saindo normalmente, e
+# PALWORLD_HTTP_LOG_ALL=1 restaura o log completo de toda requisição.
+HTTP_LOG_ALL = _env_flag("PALWORLD_HTTP_LOG_ALL", "0")
+
+_QUIET_EXACT_PATHS = frozenset(
+    {
+        "/player-position/state",
+        "/game-marker/state",
+        "/mouse-loop/state",
+        "/arena/status",
+        "/autoloop/status",
+        "/map-tile",
+        "/map-icon",
+    }
+)
+_QUIET_PATH_PREFIXES = ("/health", "/state", "/ocr-state")
+_STATIC_SUFFIXES = (
+    ".css",
+    ".eot",
+    ".gif",
+    ".html",
+    ".ico",
+    ".js",
+    ".json",
+    ".map",
+    ".mjs",
+    ".png",
+    ".svg",
+    ".ttf",
+    ".wasm",
+    ".webmanifest",
+    ".webp",
+    ".woff",
+    ".woff2",
+)
+
+
+def _is_quiet_log_line(handler: BaseHTTPRequestHandler, args) -> bool:
+    """True quando a linha é um 2xx de rota de polling/estática (log chato).
+
+    Qualquer outra coisa — POST /progress, 4xx/5xx e as linhas de erro do
+    próprio http.server — continua sendo impressa.
+    """
+    if len(args) < 2:
+        return False
+    try:
+        code = int(args[1])
+    except (TypeError, ValueError):
+        return False
+    if not 200 <= code < 300:
+        return False
+    path = urlparse(getattr(handler, "path", "") or "").path
+    if path in _QUIET_EXACT_PATHS or path.startswith(_QUIET_PATH_PREFIXES):
+        return True
+    return path.endswith(_STATIC_SUFFIXES)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
+        if not HTTP_LOG_ALL and _is_quiet_log_line(self, args):
+            return
         print("[http]", fmt % args, flush=True)
 
     def _cors(self) -> None:

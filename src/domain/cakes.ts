@@ -69,9 +69,9 @@ export const cakeRecipes: CakeRecipe[] = [
   {
     id: 'cake',
     label: 'Cake',
-    flourPer: 1,
+    flourPer: 5,
     honeyPer: 2,
-    note: '1 Flour, 8 Red Berries, 7 Milk, 8 Eggs, and 2 Honey.',
+    note: '5 Flour, 8 Red Berries, 7 Milk, 8 Eggs, and 2 Honey.',
     ingredients: [
       ingredient('berry', 'Red Berries', 8),
       ingredient('milk', 'Milk', 7),
@@ -81,9 +81,9 @@ export const cakeRecipes: CakeRecipe[] = [
   {
     id: 'mushroom',
     label: 'Mushroom Cake',
-    flourPer: 1,
+    flourPer: 5,
     honeyPer: 2,
-    note: '1 Flour, 5 Mushrooms, 3 Cavern Mushrooms, 8 Eggs, and 2 Honey.',
+    note: '5 Flour, 5 Mushrooms, 3 Cavern Mushrooms, 8 Eggs, and 2 Honey.',
     ingredients: [
       ingredient('mushroom', 'Mushroom', 5),
       ingredient('cavern', 'Cavern Mushroom', 3),
@@ -93,9 +93,9 @@ export const cakeRecipes: CakeRecipe[] = [
   {
     id: 'vegetable',
     label: 'Vegetable Cake',
-    flourPer: 1,
+    flourPer: 8,
     honeyPer: 4,
-    note: '1 Flour, 8 Tomatoes, 7 Lettuce, 8 Eggs, and 4 Honey.',
+    note: '8 Flour, 8 Tomatoes, 7 Lettuce, 8 Eggs, and 4 Honey.',
     ingredients: [
       ingredient('tomato', 'Tomato', 8),
       ingredient('lettuce', 'Lettuce', 7),
@@ -105,9 +105,9 @@ export const cakeRecipes: CakeRecipe[] = [
   {
     id: 'extravagant',
     label: 'Extravagant Vegetable Cake',
-    flourPer: 1,
+    flourPer: 12,
     honeyPer: 0,
-    note: '1 Flour, 8 Cotton Candy, 10 Potatoes, 6 Onions, and 8 Carrots.',
+    note: '12 Flour, 8 Cotton Candy, 10 Potatoes, 6 Onions, and 8 Carrots.',
     ingredients: [
       ingredient('cotton', 'Cotton Candy', 8),
       ingredient('potato', 'Potato', 10),
@@ -118,9 +118,9 @@ export const cakeRecipes: CakeRecipe[] = [
   {
     id: 'special',
     label: 'Special Cake',
-    flourPer: 1,
+    flourPer: 20,
     honeyPer: 0,
-    note: '1 Flour, 8 Caramel Cotton Candy, 15 Milk, 15 Eggs, and 2 Mammorest Meat.',
+    note: '20 Flour, 8 Caramel Cotton Candy, 15 Milk, 15 Eggs, and 2 Mammorest Meat.',
     ingredients: [
       ingredient('caramel', 'Caramel Cotton Candy', 8),
       ingredient('milk', 'Milk', 15),

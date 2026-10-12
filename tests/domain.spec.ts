@@ -82,19 +82,63 @@ describe('ore clusters', () => {
 })
 
 describe('cake calculator', () => {
+  // Quantities exactly as published on paldb.cc (Materials section of each cake).
+  it('matches the ingredient quantities published by paldb for every cake', () => {
+    const expected: Record<
+      string,
+      { flour: number; honey: number; items: Array<[string, number]> }
+    > = {
+      cake: { flour: 5, honey: 2, items: [['berry', 8], ['milk', 7], ['egg', 8]] },
+      mushroom: {
+        flour: 5,
+        honey: 2,
+        items: [['mushroom', 5], ['cavern', 3], ['egg', 8]],
+      },
+      vegetable: {
+        flour: 8,
+        honey: 4,
+        items: [['tomato', 8], ['lettuce', 7], ['egg', 8]],
+      },
+      extravagant: {
+        flour: 12,
+        honey: 0,
+        items: [['cotton', 8], ['potato', 10], ['onion', 6], ['carrot', 8]],
+      },
+      special: {
+        flour: 20,
+        honey: 0,
+        items: [['caramel', 8], ['milk', 15], ['egg', 15], ['mammorest', 2]],
+      },
+    }
+
+    expect(cakeRecipes.map((recipe) => recipe.id)).toEqual(Object.keys(expected))
+    for (const recipe of cakeRecipes) {
+      const want = expected[recipe.id]!
+      expect(recipe.flourPer, `${recipe.label} flour`).toBe(want.flour)
+      expect(recipe.honeyPer, `${recipe.label} honey`).toBe(want.honey)
+      expect(
+        recipe.ingredients.map((item) => [item.key, item.per]),
+        recipe.label,
+      ).toEqual(want.items)
+      expect(recipe.note, recipe.label).toContain(`${want.flour} Flour`)
+    }
+  })
+
   it('calculates purchases and the honey limit', () => {
     const stock = { ...emptyStock, flour: 5, honey: 10 }
     const result = calculateCakes(100_000, 0, cakeRecipes[0]!, stock, priceDefaults)
     expect(result.honeyCap).toBe(5)
     expect(result.maximum).toBe(5)
     expect(result.wheatNeeded).toBe(0)
-    expect(result.purchases.wheat).toBe(0)
+    // 5 cakes × 5 Flour, minus the 5 Flour in stock → 60 Wheat to mill.
+    expect(result.purchases.wheat).toBe(60)
   })
 
   it('uses existing flour and wheat before projecting wheat for the target', () => {
+    // 14 Flour + 3 Wheat (1 Flour) = 15 Flour → exactly 3 of the 5 cakes.
     const stock = {
       ...emptyStock,
-      flour: 2,
+      flour: 14,
       wheat: 3,
       berry: 40,
       milk: 35,
@@ -106,21 +150,21 @@ describe('cake calculator', () => {
     expect(result.maximum).toBe(3)
     expect(result.amount).toBe(3)
     expect(result.shortfall).toBe(2)
-    expect(result.wheatNeeded).toBe(6)
+    expect(result.wheatNeeded).toBe(30)
     expect(result.purchases.wheat).toBe(0)
   })
 
   it('includes wheat price when calculating the maximum', () => {
     const prices = { ...priceDefaults, wheat: 59, berry: 0, milk: 0, egg: 0 }
-    const result = calculateCakes(176, 0, cakeRecipes[0]!, emptyStock, prices)
+    const result = calculateCakes(884, 0, cakeRecipes[0]!, emptyStock, prices)
     expect(result.maximum).toBe(0)
-    expect(result.unitCost).toBe(177)
+    expect(result.unitCost).toBe(885) // 5 Flour × 3 Wheat × 59
     expect(result.purchases.wheat).toBe(0)
 
-    const enoughGold = calculateCakes(177, 0, cakeRecipes[0]!, emptyStock, prices)
+    const enoughGold = calculateCakes(885, 0, cakeRecipes[0]!, emptyStock, prices)
     expect(enoughGold.maximum).toBe(1)
-    expect(enoughGold.purchases.wheat).toBe(3)
-    expect(enoughGold.spent).toBe(177)
+    expect(enoughGold.purchases.wheat).toBe(15)
+    expect(enoughGold.spent).toBe(885)
   })
 
   it('uses inventory before spending gold', () => {

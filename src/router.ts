@@ -29,6 +29,11 @@ export const router = createRouter({
       name: 'base-boost',
       component: () => import('@/views/BaseBoostView.vue'),
     },
+    {
+      path: '/item-crafter',
+      name: 'item-crafter',
+      component: () => import('@/views/ItemCrafterView.vue'),
+    },
     { path: '/:pathMatch(.*)*', redirect: '/map' },
   ],
 })
